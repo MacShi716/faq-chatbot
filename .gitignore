@@ -1,0 +1,16 @@
+# 환경
+.venv/
+__pycache__/
+*.pyc
+
+# 비밀 정보 (절대 GitHub 에 올리지 않는다)
+.env
+
+# 평가 산출물 (필요하면 커밋해도 되지만 기본은 제외)
+reports/
+
+# 에디터/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
