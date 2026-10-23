@@ -53,10 +53,12 @@ check("예외 없음", not at.exception, at.exception)
 check("중국어 제목", "院系教务" in "\n".join(x.value for x in at.title), [x.value for x in at.title])
 check("중국어 사이드바", "设置" in "\n".join(x.value for x in at.header), [x.value for x in at.header])
 
-print("[5] 전환 후에도 질문 동작")
-at.chat_input[0].set_value("宿舍费用多少").run()
+print("[5] 전환 후에도 질문 동작 + 한국어 폴백 표시")
+at.chat_input[0].set_value("怎么申请宿舍？").run()
 check("예외 없음", not at.exception, at.exception)
-check("중국어 안내 문구", "没有找到" in all_text(at) or "통과" in "", all_text(at)[-200:])
+text = all_text(at)
+check("한국어 원문 답변", "[작성 필요] 기숙사" in text, text[-300:])
+check("폴백 표시", "韩语原文" in text, text[-300:])
 
 print()
 if FAILS:

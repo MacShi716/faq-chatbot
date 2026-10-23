@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from normalize import detect_lang, normalize
-from retriever import DEFAULT_FAQ_PATH, Retriever, load_faqs
+from retriever import DEFAULT_FAQ_PATH, Faq, Retriever, is_filled, load_faqs
 
 FAILS = []
 
@@ -51,6 +51,22 @@ try:
     check("TF-IDF 동작", m2 is not None and m2.faq.id == "F04", getattr(m2, "faq", None) and m2.faq.id)
 except ImportError:
     print("  SKIP scikit-learn 미설치 (1단계만 쓸 때는 문제 없음)")
+
+print("[6] 답변 언어 (answer_zh 우선, 없으면 한국어 폴백)")
+check("빈 답변은 미작성", not is_filled(""))
+check("[작성 필요] 는 미작성", not is_filled("[작성 필요] 확인 후 기입"))
+check("채운 답변은 작성됨", is_filled("휴학 신청은 3월과 9월에 가능합니다."))
+
+filled = Faq("T01", "질문", "问题", "한국어 답변", "출처", "2026-10-25", answer_zh="中文答案")
+check("중국어 답변 우선", filled.answer_for("zh") == ("中文答案", False), filled.answer_for("zh"))
+check("한국어 화면은 한국어", filled.answer_for("ko") == ("한국어 답변", False), filled.answer_for("ko"))
+
+empty = Faq("T02", "질문", "问题", "한국어 답변", "출처", "2026-10-25", answer_zh="[작성 필요]")
+check("중국어 미작성이면 폴백", empty.answer_for("zh") == ("한국어 답변", True), empty.answer_for("zh"))
+
+print("[7] faq.csv 에 answer_zh 컬럼 존재")
+check("12행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
+check("현재는 전부 미작성(폴백 상태)", all(f.answer_for("zh")[1] for f in faqs))
 
 print()
 if FAILS:
