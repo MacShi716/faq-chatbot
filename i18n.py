@@ -27,6 +27,7 @@ STRINGS = {
         "source_unknown": "출처 미등록",
         "checked_unknown": "미확인",
         "candidates": "상위 후보",
+        "ko_original": "(한국어 원문)",
         "footer": "데이터 담당: FAQ 의 answer/source/checked_at 를 실제 확인 내용으로 채운 뒤 사용하세요.",
     },
     "zh": {
@@ -50,6 +51,7 @@ STRINGS = {
         "source_unknown": "未登记出处",
         "checked_unknown": "未确认",
         "candidates": "候选结果",
+        "ko_original": "（韩语原文）",
         "footer": "数据负责人：请把 FAQ 的 answer/source/checked_at 换成实际核实的内容后再使用。",
     },
 }

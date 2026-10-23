@@ -22,6 +22,17 @@ DEFAULT_FAQ_PATH = Path(__file__).parent / "data" / "faq.csv"
 
 REQUIRED_COLUMNS = {"id", "question_ko", "question_zh", "answer", "source", "checked_at"}
 
+# 아직 확인하지 않은 답변을 표시하는 문자열. 이게 들어 있으면 "미작성"으로 본다.
+PLACEHOLDER_MARKERS = ("[작성 필요]", "[待填写]")
+
+
+def is_filled(text: str) -> bool:
+    """사람이 확인해 채운 답변인지. 빈 값이나 [작성 필요] 는 미작성으로 본다."""
+    value = (text or "").strip()
+    if not value:
+        return False
+    return not any(marker in value for marker in PLACEHOLDER_MARKERS)
+
 
 @dataclass
 class Faq:
@@ -32,11 +43,24 @@ class Faq:
     source: str
     checked_at: str
     category: str = ""
+    answer_zh: str = ""
 
     def variants(self, lang: str) -> list[str]:
         value = self.question_ko if lang == "ko" else self.question_zh
         out = split_variants(value)
         return out or [""]
+
+    def answer_for(self, ui_lang: str) -> tuple[str, bool]:
+        """표시할 답변과 '한국어 원문 폴백' 여부를 돌려준다.
+
+        중국어 화면에서 answer_zh 가 채워져 있으면 그것을 쓰고,
+        없으면 한국어 원문을 쓰되 폴백 표시를 켠다.
+        """
+        if ui_lang == "zh":
+            if is_filled(self.answer_zh):
+                return self.answer_zh, False
+            return self.answer, True
+        return self.answer, False
 
 
 def load_faqs(path: Path | str = DEFAULT_FAQ_PATH) -> list[Faq]:
@@ -62,6 +86,7 @@ def load_faqs(path: Path | str = DEFAULT_FAQ_PATH) -> list[Faq]:
                 source=(row.get("source") or "").strip(),
                 checked_at=(row.get("checked_at") or "").strip(),
                 category=(row.get("category") or "").strip(),
+                answer_zh=(row.get("answer_zh") or "").strip(),
             )
             if not faq.question_ko and not faq.question_zh:
                 raise ValueError(f"faq.csv {lineno}행({faq_id}): 질문이 비어 있습니다.")

@@ -106,8 +106,10 @@ if prompt := st.chat_input(t("chat_input")):
             reply = t("no_answer", best=best)
             st.markdown(reply)
         else:
-            reply = match.faq.answer
+            reply, fell_back = match.faq.answer_for(lang)
             st.markdown(reply)
+            if fell_back:
+                st.caption(t("ko_original"))
             render_source(match)
             if show_debug:
                 with st.expander(t("candidates")):
