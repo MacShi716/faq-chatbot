@@ -80,6 +80,32 @@ check("무관한 질문은 여전히 미응답", index.answer("今天天气怎�
 m = index.answer("系办公室在哪里", lang="zh")
 check("사무실 질문은 F10 유지", m is not None and m.faq.id == "F10", getattr(m, "faq", None) and m.faq.id)
 
+print("[9] 비정상 입력 (예외 없이 처리되는지)")
+edge_cases = {
+    "빈 문자열": "",
+    "공백만": "     ",
+    "문장부호만": "???!!!...",
+    "아주 긴 입력": "휴학 " * 500,
+    "영문만": "hello world",
+    "이모지": "😀😀😀",
+    "숫자만": "1234567890",
+    "한중 혼합": "휴학 어떻게 申请",
+}
+for name, value in edge_cases.items():
+    try:
+        r = index.search(value)
+        ok = isinstance(r, list)
+        index.answer(value)
+    except Exception as exc:  # noqa: BLE001 - 어떤 예외든 잡아서 실패로 기록
+        ok = False
+        detail = f"{type(exc).__name__}: {exc}"
+    else:
+        detail = ""
+    check(name, ok, detail)
+
+check("None 정규화", normalize(None) == "")
+check("탭/줄바꿈 제거", normalize("휴학\n신청\t기간") == "휴학신청기간")
+
 print()
 if FAILS:
     print(f"실패 {len(FAILS)}건: {FAILS}")

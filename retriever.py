@@ -167,9 +167,13 @@ class Retriever:
         return list(best_by_faq.values())
 
     # ---------- 공개 API ----------
+    def _tag_hits(self, faq: Faq, q_norm: str) -> int:
+        """질문에 통째로 들어 있는 태그 개수."""
+        return sum(1 for tag in (normalize(x) for x in faq.tag_list()) if len(tag) >= 2 and tag in q_norm)
+
     def _tag_hit(self, faq: Faq, q_norm: str) -> bool:
         """정규화된 질문 안에 2글자 이상 태그가 통째로 들어 있는지."""
-        return any(len(tag) >= 2 and tag in q_norm for tag in (normalize(x) for x in faq.tag_list()))
+        return self._tag_hits(faq, q_norm) > 0
 
     def search(self, query: str, lang: str | None = None, top_k: int = 3) -> list[Match]:
         """유사도 순 상위 top_k 개를 돌려준다(임계값 미적용)."""
@@ -180,12 +184,16 @@ class Retriever:
         q_norm = normalize(query)
 
         scored = self._score_difflib(query, lang) if self.method == "difflib" else self._score_tfidf(query, lang)
-        scored = [
-            (faq, max(score, TAG_HIT_SCORE) if self._tag_hit(faq, q_norm) else score)
-            for faq, score in scored
-        ]
-        scored.sort(key=lambda pair: pair[1], reverse=True)
-        return [Match(faq=faq, score=score, method=self.method) for faq, score in scored[:top_k]]
+        adjusted = []
+        for faq, score in scored:
+            hits = self._tag_hits(faq, q_norm)
+            if hits:
+                score = max(score, TAG_HIT_SCORE)
+            adjusted.append((faq, score, hits))
+
+        # 동점 처리: ① 유사도 ② 태그 적중 수 ③ 질문이 짧은 쪽(더 구체적) ④ id
+        adjusted.sort(key=lambda row: (-row[1], -row[2], len(normalize(row[0].question_ko)), row[0].id))
+        return [Match(faq=faq, score=score, method=self.method) for faq, score, _ in adjusted[:top_k]]
 
     def answer(self, query: str, lang: str | None = None) -> Match | None:
         """임계값을 넘는 최상위 1건을 반환한다. 없으면 None(= 사무실 문의 안내)."""

@@ -48,6 +48,8 @@ faq-chatbot/
 ├─ retriever.py      # 검색 엔진 (difflib / TF-IDF)
 ├─ normalize.py      # 언어 감지 + 문자열 정규화
 ├─ evaluate.py       # 50문항 정확도 측정 + 결과 보고서 생성
+├─ tune.py           # 임계값 민감도 실험 (0.3 ~ 0.6)
+├─ validate_data.py  # faq.csv 품질 점검 (ERROR / WARN)
 ├─ selftest.py       # 의존성 없는 자체 점검
 ├─ smoke_ui.py       # 화면 동작 스모크 테스트 (Streamlit AppTest)
 ├─ data/

@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Self test (검색/데이터/언어 로직)
+        run: python selftest.py
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: UI smoke test (Streamlit AppTest)
+        run: python smoke_ui.py
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: Validate faq.csv
+        run: python validate_data.py
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: Accuracy report
+        run: python evaluate.py --method difflib
+        env:
+          PYTHONIOENCODING: utf-8
