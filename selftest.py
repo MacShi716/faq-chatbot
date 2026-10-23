@@ -68,6 +68,18 @@ print("[7] faq.csv 에 answer_zh 컬럼 존재")
 check("12행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
 check("현재는 전부 미작성(폴백 상태)", all(f.answer_for("zh")[1] for f in faqs))
 
+print("[8] 키워드 태그로 중국어 질문 연결")
+check("전 행에 태그 존재", all(f.tag_list() for f in faqs))
+m = index.answer("第一工学馆在哪")
+check("건물 질문 → F13", m is not None and m.faq.id == "F13", getattr(m, "faq", None) and m.faq.id)
+m = index.answer("工学馆的位置")
+check("다른 표현도 F13", m is not None and m.faq.id == "F13", getattr(m, "faq", None) and m.faq.id)
+m = index.answer("签证快到期了怎么办")
+check("태그 보정(F09)", m is not None and m.faq.id == "F09", getattr(m, "faq", None) and m.faq.id)
+check("무관한 질문은 여전히 미응답", index.answer("今天天气怎么样") is None)
+m = index.answer("系办公室在哪里", lang="zh")
+check("사무실 질문은 F10 유지", m is not None and m.faq.id == "F10", getattr(m, "faq", None) and m.faq.id)
+
 print()
 if FAILS:
     print(f"실패 {len(FAILS)}건: {FAILS}")

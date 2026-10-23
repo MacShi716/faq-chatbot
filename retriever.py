@@ -20,6 +20,10 @@ from normalize import detect_lang, normalize, split_variants
 DEFAULT_THRESHOLD = 0.4
 DEFAULT_FAQ_PATH = Path(__file__).parent / "data" / "faq.csv"
 
+# 질문에 키워드 태그가 그대로 들어 있으면 이 점수를 최소값으로 올려준다.
+# (짧은 태그는 문자열 유사도가 낮게 나와서, 명백한 키워드 일치를 놓치는 문제를 보정)
+TAG_HIT_SCORE = 0.7
+
 REQUIRED_COLUMNS = {"id", "question_ko", "question_zh", "answer", "source", "checked_at"}
 
 # 아직 확인하지 않은 답변을 표시하는 문자열. 이게 들어 있으면 "미작성"으로 본다.
@@ -44,11 +48,20 @@ class Faq:
     checked_at: str
     category: str = ""
     answer_zh: str = ""
+    tags: str = ""
 
     def variants(self, lang: str) -> list[str]:
         value = self.question_ko if lang == "ko" else self.question_zh
         out = split_variants(value)
         return out or [""]
+
+    def tag_list(self) -> list[str]:
+        """언어와 무관한 키워드. 중국어 질문이 한국어 FAQ 에 붙을 수 있게 하는 다리 역할."""
+        return split_variants(self.tags)
+
+    def search_terms(self, lang: str) -> list[str]:
+        """검색에 쓰는 모든 문자열: 질문 표현 + 키워드 태그."""
+        return self.variants(lang) + self.tag_list()
 
     def answer_for(self, ui_lang: str) -> tuple[str, bool]:
         """표시할 답변과 '한국어 원문 폴백' 여부를 돌려준다.
@@ -87,6 +100,7 @@ def load_faqs(path: Path | str = DEFAULT_FAQ_PATH) -> list[Faq]:
                 checked_at=(row.get("checked_at") or "").strip(),
                 category=(row.get("category") or "").strip(),
                 answer_zh=(row.get("answer_zh") or "").strip(),
+                tags=(row.get("tags") or "").strip(),
             )
             if not faq.question_ko and not faq.question_zh:
                 raise ValueError(f"faq.csv {lineno}행({faq_id}): 질문이 비어 있습니다.")
@@ -118,8 +132,8 @@ class Retriever:
         scored = []
         for faq in self.faqs:
             best = 0.0
-            for variant in faq.variants(lang):
-                ratio = difflib.SequenceMatcher(None, q, normalize(variant)).ratio()
+            for term in faq.search_terms(lang):
+                ratio = difflib.SequenceMatcher(None, q, normalize(term)).ratio()
                 best = max(best, ratio)
             scored.append((faq, best))
         return scored
@@ -135,8 +149,8 @@ class Retriever:
             # 한국어/중국어는 공백 분절이 없어 문자 n-gram 이 안정적이다.
             docs, owner = [], []
             for faq in self.faqs:
-                for variant in faq.variants(lang):
-                    docs.append(normalize(variant))
+                for term in faq.search_terms(lang):
+                    docs.append(normalize(term))
                     owner.append(faq)
             vectorizer = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 3))
             matrix = vectorizer.fit_transform(docs)
@@ -153,14 +167,23 @@ class Retriever:
         return list(best_by_faq.values())
 
     # ---------- 공개 API ----------
+    def _tag_hit(self, faq: Faq, q_norm: str) -> bool:
+        """정규화된 질문 안에 2글자 이상 태그가 통째로 들어 있는지."""
+        return any(len(tag) >= 2 and tag in q_norm for tag in (normalize(x) for x in faq.tag_list()))
+
     def search(self, query: str, lang: str | None = None, top_k: int = 3) -> list[Match]:
         """유사도 순 상위 top_k 개를 돌려준다(임계값 미적용)."""
         query = (query or "").strip()
         if not query:
             return []
         lang = lang or detect_lang(query)
+        q_norm = normalize(query)
 
         scored = self._score_difflib(query, lang) if self.method == "difflib" else self._score_tfidf(query, lang)
+        scored = [
+            (faq, max(score, TAG_HIT_SCORE) if self._tag_hit(faq, q_norm) else score)
+            for faq, score in scored
+        ]
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return [Match(faq=faq, score=score, method=self.method) for faq, score in scored[:top_k]]
 
