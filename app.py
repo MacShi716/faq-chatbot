@@ -13,10 +13,21 @@ st.set_page_config(page_title="학과 교무·생활 Q&A 챗봇", page_icon="�
 
 DISCLAIMER = "※ 답변이 정확하지 않을 수 있습니다. 중요한 내용은 학과 사무실에 확인하세요."
 
+# 화면에는 프로젝트 기준 상대 경로만 보여준다(전체 경로가 노출되지 않도록).
+REL_FAQ_PATH = "data/faq.csv"
+FAQ_DIR = DEFAULT_FAQ_PATH.parent.parent
+
+
+def resolve_faq_path(value: str):
+    from pathlib import Path
+
+    p = Path(value)
+    return p if p.is_absolute() else FAQ_DIR / p
+
 
 @st.cache_resource(show_spinner=False)
 def get_retriever(faq_path: str, method: str, threshold: float) -> Retriever:
-    return Retriever(faqs=load_faqs(faq_path), threshold=threshold, method=method)
+    return Retriever(faqs=load_faqs(resolve_faq_path(faq_path)), threshold=threshold, method=method)
 
 
 def render_source(match) -> None:
@@ -29,7 +40,7 @@ def render_source(match) -> None:
 
 with st.sidebar:
     st.header("설정")
-    faq_path = st.text_input("FAQ 파일", value=str(DEFAULT_FAQ_PATH))
+    faq_path = st.text_input("FAQ 파일", value=REL_FAQ_PATH)
     method = st.radio("검색 방식", options=["difflib", "tfidf"], index=0,
                       captions=["1단계 · 문자열 유사도", "2단계 · TF-IDF"])
     threshold = st.slider("임계값 (이 값 미만이면 답변하지 않음)", 0.1, 0.9, DEFAULT_THRESHOLD, 0.05)
