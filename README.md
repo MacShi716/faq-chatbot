@@ -33,11 +33,18 @@ streamlit run app.py
 
 브라우저에서 `http://localhost:8501` 이 열린다.
 
+화면 오른쪽 위의 `한국어 | 中文` 버튼으로 UI 언어를 바꾼다. 질문 언어는 버튼과 무관하게
+자동으로 판별된다(한국어로 물으면 한국어 FAQ, 中文으로 물으면 中文 FAQ 와 매칭).
+
+> 답변 본문은 아직 한국어 데이터만 있다. 화면 문구만 번역되고 답변은 한국어로 나온다.
+> 대응하려면 `faq.csv` 에 `answer_zh` 컬럼을 추가해야 한다(2주차 논의 안건).
+
 ## 2. 폴더 구조
 
 ```
 faq-chatbot/
 ├─ app.py            # Streamlit 채팅 화면
+├─ i18n.py           # 화면 문구 사전 (한국어 / 中文) + 우측 상단 언어 전환
 ├─ retriever.py      # 검색 엔진 (difflib / TF-IDF)
 ├─ normalize.py      # 언어 감지 + 문자열 정규화
 ├─ evaluate.py       # 50문항 정확도 측정 + 결과 보고서 생성
