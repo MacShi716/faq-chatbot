@@ -17,3 +17,9 @@ Thumbs.db
 
 # Office/WPS 잠금 파일 (편집 중인 파일)
 ~$*
+
+# 발표자료/문서 파일은 GitHub에 올리지 않음 (프로젝트 코드만)
+*.pptx
+*.docx
+*.doc
+*.pdf
