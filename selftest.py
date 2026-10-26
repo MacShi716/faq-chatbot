@@ -65,7 +65,7 @@ empty = Faq("T02", "질문", "问题", "한국어 답변", "출처", "2026-10-25
 check("중국어 미작성이면 폴백", empty.answer_for("zh") == ("한국어 답변", True), empty.answer_for("zh"))
 
 print("[7] faq.csv 에 answer_zh 컬럼 존재")
-check("12행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
+check(f"{len(faqs)}행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
 check("현재는 전부 미작성(폴백 상태)", all(f.answer_for("zh")[1] for f in faqs))
 
 print("[8] 키워드 태그로 중국어 질문 연결")
