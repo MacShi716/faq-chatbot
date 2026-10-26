@@ -1,0 +1,37 @@
+html, body, .stApp, button, input, textarea {
+  font-family: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+/* 상단 툴바(사이드바 열기 버튼·테마 메뉴)는 그대로 둔다. 배경만 투명하게. */
+/* 상단 고정 헤더가 아래 버튼의 클릭을 가로채지 않도록, 본문을 헤더(약 3.75rem) 아래에서 시작한다. */
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stAppDeployButton"] { display: none; }
+.block-container { max-width: 820px; padding-top: 4.4rem; padding-bottom: 6rem; }
+
+h1 { font-weight: 800 !important; letter-spacing: -0.02em; font-size: 2rem !important; }
+h1::before { content: "💬 "; }
+
+/* 상단 안내 칩: 밝은/어두운 테마 모두에서 보이도록 반투명 색을 쓴다 */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 14px 0; }
+.chip {
+  background: rgba(47, 95, 227, 0.12); border: 1px solid rgba(47, 95, 227, 0.30);
+  border-radius: 999px; padding: 3px 12px; font-size: 0.8rem; font-weight: 600;
+}
+
+/* 말풍선: 회색 반투명이라 어떤 테마에서도 자연스럽다 */
+[data-testid="stChatMessage"] {
+  background: rgba(127, 127, 127, 0.08); border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 16px; padding: 12px 16px; margin-bottom: 10px;
+}
+[data-testid="stChatMessage"] p { line-height: 1.65; }
+
+/* 버튼(예시 질문·후보 질문): 효과는 색 변화만(가볍게) */
+.stButton > button { border-radius: 12px; font-weight: 600; }
+
+[data-testid="stChatInput"] { border-radius: 16px; }
+[data-testid="stExpander"] { border-radius: 12px; }
+
+@media (max-width: 640px) {
+  .block-container { padding-left: 0.9rem; padding-right: 0.9rem; padding-top: 4.4rem; }
+  h1 { font-size: 1.5rem !important; }
+  [data-testid="stChatMessage"] { padding: 10px 12px; border-radius: 14px; }
+}

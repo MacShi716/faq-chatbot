@@ -70,8 +70,10 @@ class Faq:
         없으면 한국어 원문을 쓰되 폴백 표시를 켠다.
         """
         if ui_lang == "zh":
-            if is_filled(self.answer_zh):
-                return self.answer_zh, False
+            # 중국어 초안이 있으면(미확인 [待填写] 표시 포함) 중국어로 보여준다.
+            # 미확인 여부는 화면의 '미확인 답변' 배지가 따로 알려준다.
+            if (self.answer_zh or "").strip():
+                return self.answer_zh.strip(), False
             return self.answer, True
         return self.answer, False
 

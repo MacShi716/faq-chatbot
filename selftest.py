@@ -7,6 +7,7 @@
 import sys
 from pathlib import Path
 
+from chat_logic import detect_intent
 from normalize import detect_lang, normalize
 from retriever import DEFAULT_FAQ_PATH, Faq, Retriever, is_filled, load_faqs
 
@@ -61,12 +62,14 @@ filled = Faq("T01", "질문", "问题", "한국어 답변", "출처", "2026-10-2
 check("중국어 답변 우선", filled.answer_for("zh") == ("中文答案", False), filled.answer_for("zh"))
 check("한국어 화면은 한국어", filled.answer_for("ko") == ("한국어 답변", False), filled.answer_for("ko"))
 
-empty = Faq("T02", "질문", "问题", "한국어 답변", "출처", "2026-10-25", answer_zh="[작성 필요]")
-check("중국어 미작성이면 폴백", empty.answer_for("zh") == ("한국어 답변", True), empty.answer_for("zh"))
+empty = Faq("T02", "질문", "问题", "한국어 답변", "출처", "2026-10-25", answer_zh="")
+check("중국어 답변이 비어 있으면 한국어 폴백", empty.answer_for("zh") == ("한국어 답변", True), empty.answer_for("zh"))
+draft = Faq("T03", "질문", "问题", "한국어 답변", "출처", "2026-10-25", answer_zh="[待填写] 中文草稿")
+check("중국어 초안은 미확인이어도 중국어로 표시", draft.answer_for("zh") == ("[待填写] 中文草稿", False), draft.answer_for("zh"))
 
 print("[7] faq.csv 에 answer_zh 컬럼 존재")
 check(f"{len(faqs)}행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
-check("현재는 전부 미작성(폴백 상태)", all(f.answer_for("zh")[1] for f in faqs))
+check("현재는 전부 중국어 초안(미확인) 표시", all(f.answer_for("zh")[0] == f.answer_zh.strip() and not f.answer_for("zh")[1] for f in faqs))
 
 print("[8] 키워드 태그로 중국어 질문 연결")
 check("전 행에 태그 존재", all(f.tag_list() for f in faqs))
@@ -105,6 +108,16 @@ for name, value in edge_cases.items():
 
 check("None 정규화", normalize(None) == "")
 check("탭/줄바꿈 제거", normalize("휴학\n신청\t기간") == "휴학신청기간")
+
+print("[10] 대화 의도(인사·후속)")
+check("인사 ko", detect_intent("안녕하세요!") == "greet")
+check("인사 zh", detect_intent("你好") == "greet")
+check("감사", detect_intent("고마워요~") == "thanks" and detect_intent("谢谢") == "thanks")
+check("후속 요청", detect_intent("더 자세히") == "followup" and detect_intent("再详细点") == "followup")
+check("언어 전환 요청", detect_intent("중국어로") == "to_zh" and detect_intent("用韩语") == "to_ko")
+check("실제 질문은 가로채지 않음", detect_intent("다시 학교 다니려면") is None)
+check("실제 질문(휴학)", detect_intent("휴학 신청은 언제 해요?") is None)
+check("실제 질문(중국어)", detect_intent("什么时候选课？") is None)
 
 print()
 if FAILS:
