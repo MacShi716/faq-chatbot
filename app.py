@@ -26,8 +26,11 @@ st.html(f"<style>{STYLE_PATH.read_text(encoding='utf-8')}</style>")
 REL_FAQ_PATH = "data/faq.csv"
 FAQ_DIR = DEFAULT_FAQ_PATH.parent.parent
 
-# 처음 화면에 보여주는 예시 질문(눌러서 바로 질문). 시연 원문 그대로 사용한다.
-EXAMPLE_QUESTIONS = ["휴학 신청은 언제 해요?", "什么时候选课？", "签证续签要多久"]
+# 처음 화면에 보여주는 예시 질문(눌러서 바로 질문). 화면 언어에 맞춰 한 가지 언어로만 보여준다.
+EXAMPLE_QUESTIONS = {
+    "ko": ["휴학 신청은 언제 해요?", "수강신청은 언제 해요?", "비자 연장은 어떻게 해요?"],
+    "zh": ["什么时候可以申请休学？", "什么时候选课？", "签证续签要多久"],
+}
 
 
 def resolve_faq_path(value: str) -> Path:
@@ -186,8 +189,9 @@ if not st.session_state.history and "pending_prompt" not in st.session_state:
         with st.chat_message("assistant"):
             st.markdown(t("welcome"))
         st.caption(t("examples_label"))
-        cols = st.columns(len(EXAMPLE_QUESTIONS))
-        for col, question in zip(cols, EXAMPLE_QUESTIONS):
+        examples = EXAMPLE_QUESTIONS[get_lang()]
+        cols = st.columns(len(examples))
+        for col, question in zip(cols, examples):
             if col.button(question, key=f"ex_{question}", use_container_width=True):
                 st.session_state.pending_prompt = question
 
