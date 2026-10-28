@@ -23,3 +23,13 @@ Thumbs.db
 *.docx
 *.doc
 *.pdf
+
+# faq_sync.py backup
+*.bak
+
+# Streamlit 비밀 파일 (API 키)
+.streamlit/secrets.toml
+secrets.toml
+
+# Tier B 호출 기록(질문·답변 로그, 로컬 전용)
+logs/

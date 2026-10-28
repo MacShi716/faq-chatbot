@@ -14,6 +14,8 @@ _HANGUL = re.compile(r"[\uac00-\ud7a3]")
 
 # 비교 전에 제거할 문장부호 (한국어/중국어/영문 공통)
 _PUNCT = re.compile(r"[\s\.\,\?\!~。、，？！；;:：'\"“”‘’\(\)\[\]\{\}<>《》·…\-_/\\|]+")
+# 보이지 않는 글자(제로폭 공백·방향 표시·BOM)도 비교 전에 없앤다. 복사·붙여넣기로 섞여 들어오면 유사도가 떨어진다.
+INVISIBLE = re.compile("[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]")
 
 
 def detect_lang(text: str) -> str:
@@ -33,11 +35,13 @@ def normalize(text: str) -> str:
 
     - 유니코드 정규화(NFKC): 전각 문자/호환 문자를 반각으로
     - 소문자화
+    - 보이지 않는 글자(제로폭 공백 등) 제거
     - 공백과 문장부호 제거
     """
     if not isinstance(text, str):
         text = "" if text is None else str(text)
     text = unicodedata.normalize("NFKC", text)
+    text = INVISIBLE.sub("", text)
     text = text.lower()
     text = _PUNCT.sub("", text)
     return text

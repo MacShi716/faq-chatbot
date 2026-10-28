@@ -28,6 +28,10 @@ h1::before { content: "💬 "; }
 .stButton > button { border-radius: 12px; font-weight: 600; }
 
 [data-testid="stChatInput"] { border-radius: 16px; }
+
+/* AI 대화 토글: 채팅 입력창 바로 위(화면 하단 고정 영역, st.bottom). 안내 문구는 작고 촘촘하게 */
+[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] { gap: 0.3rem; }
+[data-testid="stBottomBlockContainer"] [data-testid="stCaptionContainer"] { font-size: 0.74rem; line-height: 1.35; margin-top: -0.15rem; }
 [data-testid="stExpander"] { border-radius: 12px; }
 
 @media (max-width: 640px) {

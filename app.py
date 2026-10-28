@@ -4,13 +4,50 @@
 실행:  streamlit run app.py
 """
 
+import importlib
+import os
 import time
+import uuid
 from pathlib import Path
 
 import streamlit as st
 
+import chat_logic
+import i18n
+import linkify
+import llm_answer
+import normalize
+import retriever
+
+# 서버를 켜 둔 채 .py 파일이 바뀌면, 이미 import 된 모듈(i18n 등)은 옛 내용 그대로 메모리에 남을 수 있다.
+# 그러면 새 app.py 가 새 문구 키(예: ai_toggle)를 불러도 옛 사전에는 없어서 키 이름이 그대로 화면에 나온다.
+# 스크립트가 다시 실행될 때마다 파일 수정 시각을 확인해, 바뀐 모듈이 있으면 의존 순서대로 다시 불러온다.
+_LOCAL_MODULES = (normalize, linkify, retriever, i18n, llm_answer, chat_logic)  # 의존 순서(앞이 뒤에서 쓰인다)
+
+
+def _reload_stale_local_modules() -> bool:
+    changed = False
+    for mod in _LOCAL_MODULES:
+        mtime = os.path.getmtime(mod.__file__)
+        seen = getattr(mod, "_loaded_mtime", None)
+        if seen is None:  # 방금 import 됐거나 처음 확인하는 모듈: 지금 파일 시각을 기준으로 삼는다
+            mod._loaded_mtime = mtime
+        elif mtime > seen:
+            changed = True
+    if changed:
+        for mod in _LOCAL_MODULES:
+            importlib.reload(mod)
+            mod._loaded_mtime = os.path.getmtime(mod.__file__)
+        st.cache_resource.clear()  # 옛 Retriever 객체가 남지 않게 한다
+    return changed
+
+
+_reload_stale_local_modules()
+
 from chat_logic import build_entry
 from i18n import LANG_LABELS, LANGS, get_lang, t
+from linkify import safe_links
+from llm_answer import is_available
 from retriever import DEFAULT_FAQ_PATH, DEFAULT_THRESHOLD, Retriever, is_filled, load_faqs
 
 st.set_page_config(
@@ -21,6 +58,24 @@ st.set_page_config(
 
 STYLE_PATH = Path(__file__).with_name("styles.css")
 st.html(f"<style>{STYLE_PATH.read_text(encoding='utf-8')}</style>")
+
+# 브라우저(Chrome·Edge)의 자동 번역이 화면 문구를 바꿔 버리지 않게 한다(예: "未经确认" → "默认确认").
+# 이 앱은 한국어/中文 화면을 직접 제공하므로 번역이 필요 없다. 높이 0 짜리 조각에서 상위 문서에 표시를 단다.
+_NOTRANSLATE_HTML = (
+    "<script>try{var d=window.parent.document;d.documentElement.setAttribute('translate','no');"
+    "d.documentElement.classList.add('notranslate');"
+    "if(!d.querySelector('meta[name=google]')){var m=d.createElement('meta');m.name='google';m.content='notranslate';d.head.appendChild(m);}"
+    "}catch(e){}</script>"
+)
+try:
+    if hasattr(st, "iframe"):  # 최신 Streamlit: components.v1.html 은 곧 없어진다는 경고가 있어 st.iframe 을 쓴다
+        st.iframe(_NOTRANSLATE_HTML, height=1)
+    else:
+        import streamlit.components.v1 as components
+
+        components.html(_NOTRANSLATE_HTML, height=0)
+except Exception:  # noqa: BLE001 - 번역 방지는 있으면 좋은 보조 기능이다. 실패해도 앱은 그대로 동작해야 한다
+    pass
 
 # 화면에는 프로젝트 기준 상대 경로만 보여준다(전체 경로가 노출되지 않도록).
 REL_FAQ_PATH = "data/faq.csv"
@@ -45,13 +100,15 @@ def get_retriever(faq_path: str, method: str, threshold: float) -> Retriever:
 
 def render_source(faq, score: float, method: str) -> None:
     st.caption(
-        t(
-            "source",
-            source=faq.source or t("source_unknown"),
-            checked=faq.checked_at or t("checked_unknown"),
-            id=faq.id,
-            score=score,
-            method=method,
+        safe_links(  # 출처 안의 URL 이 뒤따르는 글자와 한 링크로 합쳐지지 않게 한다
+            t(
+                "source",
+                source=faq.source or t("source_unknown"),
+                checked=faq.checked_at or t("checked_unknown"),
+                id=faq.id,
+                score=score,
+                method=method,
+            )
         )
     )
 
@@ -71,6 +128,7 @@ def typewriter(text: str):
 
 
 def say(text: str, stream: bool) -> None:
+    text = safe_links(text)  # 답변 속 URL 바로 뒤에 "，" "）" 같은 전각 부호·한자가 붙어도 링크가 깨지지 않게 한다
     if stream and text:
         st.write_stream(typewriter(text))
     else:
@@ -100,13 +158,32 @@ def render_match(idx: int, entry: dict, stream: bool) -> None:
             question_button(idx, rel, "rel")
 
 
-def render_none(idx: int, entry: dict, stream: bool) -> None:
-    best = t("best_candidate", score=entry["best"]) if entry["best"] is not None else ""
-    say(t("no_answer", best=best), stream)
+def render_suggestions(idx: int, entry: dict) -> None:
     if entry["suggestions"]:
         st.caption(t("suggest_label"))
         for faq in entry["suggestions"]:
             question_button(idx, faq, "sug")
+
+
+def render_none(idx: int, entry: dict, stream: bool) -> None:
+    if entry.get("template"):  # 학교 고유 정보(전화·비용·일정·장소): LLM 을 부르지 않고 고정 안내
+        say(t("school_fact_template"), stream)
+    else:
+        best = t("best_candidate", score=entry["best"]) if entry["best"] is not None else ""
+        say(t("no_answer", best=best), stream)
+        if entry.get("ai_failed"):  # AI 답변이 켜져 있는데 가져오지 못한 경우
+            st.caption(t("ai_unavailable"))
+    render_suggestions(idx, entry)
+
+
+def render_ai(idx: int, entry: dict, stream: bool) -> None:
+    """Tier B: FAQ 에 없는 질문에 대한 AI 자율 답변. 항상 라벨이 먼저, 출처 줄(render_source)은 절대 없다."""
+    st.markdown(f":orange-badge[{t('ai_label')}]")
+    say(entry["text"], stream)
+    st.caption(safe_links(t("ai_nudge")))
+    if entry.get("model"):
+        st.caption(t("ai_model", model=entry["model"]))
+    render_suggestions(idx, entry)
 
 
 def render_entry(idx: int, entry: dict, show_debug: bool, stream: bool = False) -> None:
@@ -114,11 +191,11 @@ def render_entry(idx: int, entry: dict, show_debug: bool, stream: bool = False) 
     with st.chat_message(entry["role"]):
         kind = entry.get("kind")
         if kind is None:  # 사용자 말풍선
-            st.markdown(entry["text"])
+            st.markdown(safe_links(entry["text"]))
         elif kind == "talk":
             say(t(entry["key"]), stream)
         else:
-            (render_match if kind == "match" else render_none)(idx, entry, stream)
+            {"match": render_match, "ai": render_ai}.get(kind, render_none)(idx, entry, stream)
             if show_debug and entry.get("candidates"):
                 render_candidates(entry["candidates"])
 
@@ -131,6 +208,14 @@ def on_lang_change() -> None:
         st.session_state.ui_lang = picked
     else:
         st.session_state.ui_lang_picker = get_lang()
+
+
+def on_ai_toggle() -> None:
+    """AI 대화 토글: 세션별 선택을 ai_on 에 저장한다. 켜는 순간에만 안내(toast)를 한 번 띄운다."""
+    on = bool(st.session_state.ai_toggle)
+    st.session_state.ai_on = on
+    if on:
+        st.session_state.ai_notice_pending = True
 
 
 st.session_state.setdefault("ui_lang_picker", get_lang())
@@ -178,6 +263,31 @@ st.markdown(
     '<div class="chips">' + "".join(f'<span class="chip">{c}</span>' for c in t("chips").split("|")) + "</div>",
     unsafe_allow_html=True,
 )
+# AI 대화 토글: 채팅 입력창(st.chat_input) 바로 위에 붙여, 입력창과 항상 함께 보이게 한다(하단 고정 영역).
+# 서버에 AI 설정이 있어야(is_available) 쓸 수 있고, 켜는 것은 사용자(세션)별 선택이다. 기본은 꺼짐.
+ai_available = is_available()
+st.session_state.setdefault("ai_on", False)
+if not ai_available:
+    st.session_state.ai_on = False
+st.session_state.ai_toggle = st.session_state.ai_on  # 화면 언어가 바뀌어 위젯이 새로 만들어져도 상태 유지
+# st.chat_input 은 최상위에서 호출하면 화면 맨 아래 영역(st.bottom)에 고정된다. 같은 영역에 토글을 먼저 그리면
+# 토글이 입력창 바로 위에 놓인다. st.bottom 이 없는 옛 버전은 st._bottom, 그것도 없으면 일반 컨테이너로 대신한다.
+bottom_zone = getattr(st, "bottom", None) or getattr(st, "_bottom", None) or st.container()
+with bottom_zone:
+    st.toggle(
+        t("ai_toggle"),
+        key="ai_toggle",
+        help=t("ai_toggle_help"),
+        disabled=not ai_available,
+        on_change=on_ai_toggle,
+    )
+    ai_enabled = ai_available and bool(st.session_state.ai_on)
+    if not ai_available:  # 안내 문구는 토글 바로 아래에 작게(styles.css 의 하단 영역 규칙)
+        st.caption(t("ai_not_configured"))
+    elif ai_enabled:
+        st.caption(t("ai_on_notice"))
+if ai_enabled and st.session_state.pop("ai_notice_pending", False):
+    st.toast(t("ai_on_notice"), icon="🤖", duration="long")
 st.caption(t("disclaimer"))
 
 typed = st.chat_input(t("chat_input"))
@@ -203,9 +313,12 @@ if prompt:
     examples_box.empty()
     st.session_state.history.append({"role": "user", "text": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(safe_links(prompt))
 
-    entry = build_entry(prompt, st.session_state.history, index)
+    st.session_state.setdefault("session_id", uuid.uuid4().hex)  # AI 답변 속도 제한 단위
+    entry = build_entry(
+        prompt, st.session_state.history, index, session_key=st.session_state.session_id, ai_enabled=ai_enabled
+    )
     st.session_state.history.append(entry)
     render_entry(len(st.session_state.history) - 1, entry, show_debug, stream=True)
 
