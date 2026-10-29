@@ -690,9 +690,6 @@ try:
     check("evaluate 화면 기준: 미작성 초안 FAQ 는 답으로 나오지 않는다", not {r["app_predicted"] for r in rep["results"]} & drafts)
     check("evaluate 화면 기준: 약한 오매칭 K03(다시 학교 다니려면→F01)·Z21(校车时刻表→F12)은 답 없음",
           byq["K03"]["app_predicted"] == "" and byq["Z21"]["app_predicted"] == "", (byq["K03"]["app_predicted"], byq["Z21"]["app_predicted"]))
-    z03 = byq["Z03"]
-    print(f"  NOTE 알려진 한계: Z03 什么时候可以复学 → 화면 {z03['app_predicted'] or '(답 없음)'} (기대 F02, 유사도 {z03['score']:.3f}). "
-          "강한 일치(0.65 이상)라 가드로 거를 수 없다(검색 순위 문제)")
     # 타자 효과(KI-2): 링크를 두 글자씩 쪼개면 타이핑 도중 마크다운 원문이 보인다
     tc = linkify.typing_chunks
     s1 = sl("详见（www.kyungnam.ac.kr）确认")
@@ -702,6 +699,67 @@ try:
     check("타자 효과: 링크 없는 글은 2글자씩, 밑줄 이스케이프 링크도 한 조각",
           tc("가나다라마") == ["가나", "다라", "마"] and tc("") == [] and sl("https://a.kr/a_b_c") in tc(s2) and "".join(tc(s2)) == s2)
     check("app.py: typewriter 가 linkify.typing_chunks 를 쓴다", "linkify.typing_chunks(" in app_src2)
+    # ============================================================ [15] QA 인수 테스트 AC-1 2차(2026-10-29) 회귀 점검
+    print("[15] QA AC-1 2차: 검색 순위(문자열 + 알맹이 유사도) · 애매한 1위 가드 · 화면 오답 0 · 숨긴 초안 유사도 문구")
+    from chat_logic import AMBIGUOUS_MARGIN, is_ambiguous, key_words, missing_key_words, shown_best
+
+    check("애매한 1위 가드 기준값(순위 점수 차 0.10)", AMBIGUOUS_MARGIN == 0.10)
+    check("key_words: 한국어는 조사·어미를 떼고 중국어는 흔한 의문 표현으로 나눈다",
+          key_words("성적 장학금 기준이 뭐예요", "ko") == ["성적", "장학금", "기준"]
+          and key_words("외국인등록증 갱신 어떻게 해요", "ko") == ["외국인등록증", "갱신"]
+          and key_words("생활관 들어가려면 어떻게 해요", "ko") == ["생활관", "들어"]
+          and key_words("什么时候可以复学", "zh") == ["复学"],
+          (key_words("성적 장학금 기준이 뭐예요", "ko"), key_words("생활관 들어가려면 어떻게 해요", "ko"), key_words("什么时候可以复学", "zh")))
+    t03 = index.search("什么时候可以复学", lang="zh", top_k=3)
+    check("순위: '什么时候可以复学' 1위는 F02(复学), F01(休学)이 아니다(문자열 0.78 < 0.70 이어도 알맹이 '复学' 1.0)",
+          t03[0].faq.id == "F02" and t03[0].rank_score > t03[1].rank_score, [(m.faq.id, round(m.score, 2), round(m.content, 2)) for m in t03])
+    t12 = index.search("성적 장학금 기준이 뭐예요", lang="ko", top_k=3)
+    check("순위: '성적 장학금 기준이 뭐예요' 1위는 F06(장학금), F05(성적 조회)가 아니다", t12[0].faq.id == "F06",
+          [(m.faq.id, round(m.score, 2), round(m.content, 2)) for m in t12])
+    t17 = index.search("외국인등록증 갱신 어떻게 해요", lang="ko", top_k=3)
+    check("애매한 1위: '외국인등록증 갱신' 은 1·2위 박빙이고 1위에 '갱신' 이 없다 → 답하지 않는다",
+          is_ambiguous("외국인등록증 갱신 어떻게 해요", t17, "ko") and missing_key_words("외국인등록증 갱신 어떻게 해요", t17[0].faq, "ko") == ["갱신"]
+          and pick_match("외국인등록증 갱신 어떻게 해요", t17, "ko") is None, [(m.faq.id, round(m.rank_score, 2)) for m in t17])
+    tz04 = index.search("复学申请流程", lang="zh", top_k=3)
+    check("애매한 1위 가드: 박빙이어도 핵심 낱말이 모두 들어 있으면 1위를 믿는다('复学申请流程' → F02)",
+          pick_match("复学申请流程", tz04, "zh") is not None and pick_match("复学申请流程", tz04, "zh").faq.id == "F02")
+    check("pick_match: 1위만 넘기면(top_k=1) 박빙 판단을 하지 않는다(예전 호출 호환)",
+          not is_ambiguous("외국인등록증 갱신 어떻게 해요", t17[:1], "ko"))
+    QA2 = (("zh", "什么时候可以复学", "F02", "F01"), ("ko", "성적 장학금 기준이 뭐예요", "F06", "F05"),
+           ("ko", "외국인등록증 갱신 어떻게 해요", "F09", "F16"))
+    for lg, q, right, wrong in QA2:
+        for ai_on in (False, True):
+            setup(CF_ONLY, lambda url, h, p: cf_ok("테스트 답변"))
+            e = _build_entry(q, hist(q), index, session_key="qa2", ai_enabled=ai_on)
+            got = e["faq"].id if "faq" in e else None
+            tag = "AI 켜짐" if ai_on else "AI 꺼짐"
+            ok_kind = (got == right) or (got is None and (e["kind"] == "none" if not ai_on else e["kind"] in ("ai", "none")))
+            check(f"QA2({tag}) {q!r}: 맞는 FAQ({right}) 또는 답 없음/Tier B, 잘못된 FAQ({wrong} 등) 답 아님",
+                  ok_kind and got in (None, right), (e.get("kind"), got))
+            check(f"QA2({tag}) {q!r}: 제안에 미작성 초안 없음", not {f.id for f in e.get("suggestions", [])} & drafts)
+    for q, lg in (("你会说韩语吗", "zh"), ("학교 수영장 몇 시까지 해요?", "ko"), ("파이썬 리스트 정렬 어떻게 해요?", "ko")):
+        check(f"QA(이전 사례) {q!r}: 새 순위·가드에서도 답 없음", pick_match(q, index.search(q, lang=lg, top_k=3), lg) is None)
+    # 평가셋: 화면 오답 0, 이전(6c65c6c)에 화면에서 맞던 35문항은 그대로 맞는다
+    was_ok = ("K01 K02 K04 K05 K06 K07 K08 K09 K10 K11 K13 K14 K15 K16 K18 K21 K22 Z01 Z02 Z04 Z05 Z06 Z07 Z08 Z09 Z10 "
+              "Z11 Z12 Z13 Z14 Z15 Z16 Z17 Z18 Z22").split()
+    check("evaluate 화면 기준: 6c65c6c 에서 맞던 35문항은 하나도 답 없음·오답이 되지 않는다",
+          not [q for q in was_ok if not byq[q]["app_correct"]], [q for q in was_ok if not byq[q]["app_correct"]])
+    wrong_shown = [(r["qid"], r["app_predicted"]) for r in rep["results"] if r["app_predicted"] and not r["app_correct"]]
+    check("evaluate 화면 기준: 다른 FAQ 답을 보여 주는 화면 오답 0건(Z03·K12·K17 포함)", not wrong_shown and rep["app_wrong"] == 0, wrong_shown)
+    check("evaluate 화면 기준: Z03→F02, K12→F06 으로 맞고 K17 은 답 없음",
+          (byq["Z03"]["app_predicted"], byq["K12"]["app_predicted"], byq["K17"]["app_predicted"]) == ("F02", "F06", ""),
+          (byq["Z03"]["app_predicted"], byq["K12"]["app_predicted"], byq["K17"]["app_predicted"]))
+    # 숨긴 미작성 초안: '가장 유사한 후보 유사도 1.00' 같은 오해 문구를 만들지 않는다
+    f10q = split_variants(next(f for f in faqs if f.id == "F10").question_ko)[0]
+    e10 = _build_entry(f10q, hist(f10q), index, ai_enabled=False)
+    check(f"숨긴 초안(F10 자기 질문 {f10q!r}): 검색 1위는 1.00 이지만 안내에 보일 유사도는 제안한 후보 기준(1.00 아님)",
+          e10["kind"] == "none" and e10["best"] == 1.0 and (shown_best(e10) is None or shown_best(e10) < 1.0), (e10.get("kind"), shown_best(e10)))
+    check("shown_best: 제안 없으면 None, 있으면 제안한 후보 중 가장 높은 유사도",
+          shown_best({"suggestions": [], "candidates": [(1.0, "F10", "q")]}) is None
+          and shown_best({"suggestions": [Faq("F02", "q", "q", "a", "", "")], "candidates": [(1.0, "F10", "q"), (0.55, "F02", "q")]}) == 0.55)
+    app_src3 = Path("app.py").read_text(encoding="utf-8")
+    check("app.py: 답 없음 안내의 유사도는 chat_logic.shown_best 로 낸다(검색 1위 점수 직접 사용 안 함)",
+          "chat_logic.shown_best(entry)" in app_src3 and 'score=entry["best"]' not in app_src3)
 finally:
     la._get, la._http_post, la._now, la.LOG_PATH = _saved
     la.reset_state()

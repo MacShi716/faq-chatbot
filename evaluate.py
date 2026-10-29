@@ -11,6 +11,7 @@
 
 '화면 기준' 정확도도 함께 낸다: 화면(chat_logic.pick_match)과 같은 판단으로 약한 매칭 가드·미작성 초안을 적용해
 실제로 답으로 보여주는 FAQ 가 expected_id 와 같으면 정답. 답 없음(학과 사무실 문의 안내)은 오답으로 센다.
+'화면 오답'(답 없음이 아니라 다른 FAQ 답을 보여 준 경우)은 따로 센다: 사용자에게 틀린 답이 나간 건수.
 주의: 질문 작성자와 정답 작성자가 같은 내부 평가셋이라 점수가 실제보다 좋게 나올 수 있다.
 """
 
@@ -48,7 +49,7 @@ def run(method: str, threshold: float, faq_path: Path, eval_path: Path) -> dict:
         question = row["question"].strip()
         lang = (row["lang"] or detect_lang(question)).strip()
         expected = row["expected_id"].strip()
-        candidates = index.search(question, lang=lang, top_k=1)
+        candidates = index.search(question, lang=lang, top_k=3)  # 2위까지 있어야 화면의 '애매한 1위' 판단과 같다
         hit = bool(candidates) and candidates[0].score >= threshold
         predicted = candidates[0].faq.id if hit else ""
         score = candidates[0].score if candidates else 0.0
@@ -64,6 +65,7 @@ def run(method: str, threshold: float, faq_path: Path, eval_path: Path) -> dict:
     total = len(results)
     correct = sum(r["correct"] for r in results)
     app_correct = sum(r["app_correct"] for r in results)
+    app_wrong = sum(1 for r in results if r["app_predicted"] and not r["app_correct"])
     by_lang = {}
     for lang in ("ko", "zh"):
         subset = [r for r in results if r["lang"] == lang]
@@ -78,6 +80,7 @@ def run(method: str, threshold: float, faq_path: Path, eval_path: Path) -> dict:
         "accuracy": correct / total * 100 if total else 0.0,
         "by_lang": by_lang, "results": results,
         "app_correct": app_correct, "app_accuracy": app_correct / total * 100 if total else 0.0,
+        "app_wrong": app_wrong, "app_none": total - app_correct - app_wrong,
     }
 
 
@@ -92,7 +95,8 @@ def write_report(report: dict, out_dir: Path) -> Path:
         f"- 실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"- 임계값: {report['threshold']}",
         f"- 전체 정확도: **{report['correct']}/{report['total']} = {report['accuracy']:.1f}%**",
-        f"- 화면 기준(약한 매칭 가드·미작성 초안 제외): **{report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%**",
+        f"- 화면 기준(약한 매칭 가드·애매한 1위 가드·미작성 초안 제외): **{report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%**"
+        f" (화면 오답 {report['app_wrong']}건 · 답 없음 {report['app_none']}건)",
         "- 내부 평가셋(질문 작성자 = 정답 작성자)이라 실제 사용자 질문보다 점수가 좋게 나올 수 있다.",
         "",
         "## 언어별",
@@ -146,7 +150,8 @@ def main() -> int:
     for lang, label in (("ko", "한국어"), ("zh", "중국어")):
         s = report["by_lang"][lang]
         print(f"  {label}: {s['correct']}/{s['total']} = {s['accuracy']:.1f}%")
-    print(f"화면 기준(약한 매칭 가드·미작성 초안 제외) {report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%")
+    print(f"화면 기준(약한 매칭 가드·애매한 1위 가드·미작성 초안 제외) {report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%"
+          f" · 화면 오답 {report['app_wrong']}건 · 답 없음 {report['app_none']}건")
     print(f"보고서: {path}")
     return 0
 

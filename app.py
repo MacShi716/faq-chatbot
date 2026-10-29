@@ -169,7 +169,8 @@ def render_none(idx: int, entry: dict, stream: bool) -> None:
     if entry.get("template"):  # 학교 고유 정보(전화·비용·일정·장소): LLM 을 부르지 않고 고정 안내
         say(t("school_fact_template"), stream)
     else:
-        best = t("best_candidate", score=entry["best"]) if entry["best"] is not None else ""
+        shown = chat_logic.shown_best(entry)  # 화면에 제안한 후보 기준(숨긴 미작성 초안의 점수는 보여 주지 않는다)
+        best = t("best_candidate", score=shown) if shown is not None else ""
         say(t("no_answer", best=best), stream)
         if entry.get("ai_failed"):  # AI 답변이 켜져 있는데 가져오지 못한 경우
             st.caption(t("ai_unavailable"))

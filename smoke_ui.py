@@ -462,6 +462,30 @@ try:
             else:
                 check(f"QA({tag}) {q!r}: 답 없음 안내(학과 사무실 문의), FAQ {wrong} 답·출처·초안 문구 없음, AI 호출 없음",
                       not aq.exception and sorry in text and no_faq and not CALLS, aq.exception or text[-300:])
+    print("[13] QA 인수 테스트 AC-1 2차: 잘못된 FAQ 답이 화면에 나오지 않는다 · 숨긴 초안 유사도 문구")
+    QA2 = (("zh", "什么时候可以复学", "F02", "抱歉，没有找到匹配的回答"),
+           ("ko", "성적 장학금 기준이 뭐예요", "F06", "죄송합니다"),
+           ("ko", "외국인등록증 갱신 어떻게 해요", "F09", "죄송합니다"))
+    for ai_on, cfg in ((False, {}), (True, ON)):
+        for lg, q, right, sorry in QA2:
+            install(cfg)
+            aq = new_app(ai=ai_on)
+            if lg == "zh":
+                aq.get("segmented_control")[0].set_value("zh")
+                aq.run()
+            aq.chat_input[0].set_value(q).run()
+            text = all_text(aq)
+            tag = "AI 켜짐" if ai_on else "AI 꺼짐"
+            shown_ids = set(re.findall(r"· FAQ (F\d+) ·", text))
+            no_answer = sorry in text or LABEL_KO in text or LABEL_ZH in text or "FAQ에 아직" in text or "FAQ里还没有" in text
+            check(f"QA2({tag}) {q!r}: 맞는 FAQ({right}) 답이거나 답 없음/Tier B, 다른 FAQ 출처 줄 없음",
+                  not aq.exception and shown_ids <= {right} and (shown_ids == {right} or no_answer), aq.exception or (shown_ids, text[-300:]))
+    install({})
+    ad = new_app(ai=False)
+    ad.chat_input[0].set_value("학과 사무실은 어디에 있어요?").run()
+    text = all_text(ad)
+    check("숨긴 미작성 초안(F10 자기 질문): 답 없음 안내에 '유사도 1.00' 이 나오지 않는다",
+          not ad.exception and "죄송합니다" in text and "유사도 1.00" not in text and "· FAQ F10" not in text, ad.exception or text[-300:])
 finally:
     la._get, la._http_post, la.LOG_PATH = _saved
     la.reset_state()

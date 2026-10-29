@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -113,8 +114,60 @@ def load_faqs(path: Path | str = DEFAULT_FAQ_PATH) -> list[Faq]:
 @dataclass
 class Match:
     faq: Faq
-    score: float
+    score: float  # 화면에 보이는 문자열 유사도(태그 적중이면 0.7 이상)
     method: str
+    content: float = 0.0  # 흔한 의문 표현을 뺀 알맹이 유사도(content_score, 순위용)
+
+    @property
+    def rank_score(self) -> float:
+        """순위용 합산 점수 = 문자열 유사도 + 알맹이 유사도(0~2)."""
+        return self.score + self.content
+
+
+# --- 알맹이 유사도 -------------------------------------------------------------------------------------------
+# difflib 전체 유사도는 '什么时候可以' 같은 흔한 의문 표현이 길게 겹치면 높게 나온다
+# (예: "什么时候可以复学" 가 F01 "什么时候可以申请休学" 0.78 > F02 "怎么申请复学" 0.70).
+# 그래서 흔한 의문 표현을 뺀 '알맹이'끼리의 유사도도 순위에 더한다(复学/복학 처럼 내용 낱말이 맞는 FAQ 가 위로).
+_GENERIC_WORDS = (
+    # 中文 의문·조동 표현
+    "什么时候", "是什么", "怎么办", "怎么样", "怎么", "什么", "如何", "可以", "能不能", "请问", "一下", "多少", "哪里", "在哪",
+    "吗", "呢", "吧", "啊", "的", "是", "有", "要", "你", "我", "想", "能", "会", "还", "了", "这", "那", "个",
+    # 한국어 의문·어미
+    "어떻게", "언제", "뭐예요", "뭐에요", "무엇", "어디", "얼마", "해요", "하나요", "있나요", "인가요", "알려주세요", "알려줘",
+    "가능한가요", "되나요", "돼요", "요", "까", "나", "가", "은", "는", "이", "를", "을", "에", "도", "좀", "몇",
+)
+# 순위용 알맹이에는 위치를 묻는 말을 남긴다: "图书馆在哪"(지도 F62) 와 "图书馆怎么使用"(이용 안내 F26) 를 가르는 말이라서.
+_PLACE_WORDS = ("哪里", "在哪")
+
+
+def _generic_re(words) -> re.Pattern:
+    return re.compile("|".join(re.escape(w) for w in sorted({normalize(w) for w in words}, key=len, reverse=True)))
+
+
+_GENERIC_RE = _generic_re(_GENERIC_WORDS)
+_RANK_GENERIC_RE = _generic_re(w for w in _GENERIC_WORDS if w not in _PLACE_WORDS)
+
+
+def _core(text: str, pattern: re.Pattern = _GENERIC_RE) -> str:
+    """정규화한 뒤 흔한 의문 표현을 뺀 알맹이."""
+    return pattern.sub("", normalize(text))
+
+
+def content_score(query: str, faq: "Faq", lang: str, for_rank: bool = False) -> float:
+    """흔한 의문 표현을 뺀 질문과 FAQ 질문·키워드 사이의 가장 높은 difflib 유사도(0~1).
+
+    for_rank=True(검색 순위용)면 위치를 묻는 중국어 말(在哪·哪里)은 빼지 않는다.
+    """
+    pattern = _RANK_GENERIC_RE if for_rank else _GENERIC_RE
+    q = _core(query, pattern)
+    if not q:
+        return 0.0
+    best = 0.0
+    for term in faq.search_terms(lang):
+        t = _core(term, pattern)
+        if t:
+            best = max(best, difflib.SequenceMatcher(None, q, t).ratio())
+    return best
 
 
 @dataclass
@@ -191,11 +244,11 @@ class Retriever:
             hits = self._tag_hits(faq, q_norm)
             if hits:
                 score = max(score, TAG_HIT_SCORE)
-            adjusted.append((faq, score, hits))
+            adjusted.append((faq, score, content_score(query, faq, lang, for_rank=True), hits))
 
-        # 동점 처리: ① 유사도 ② 태그 적중 수 ③ 질문이 짧은 쪽(더 구체적) ④ id
-        adjusted.sort(key=lambda row: (-row[1], -row[2], len(normalize(row[0].question_ko)), row[0].id))
-        return [Match(faq=faq, score=score, method=self.method) for faq, score, _ in adjusted[:top_k]]
+        # 순위: ① 문자열 유사도 + 알맹이 유사도 합(높은 순) ② 태그 적중 수 ③ 대표 질문이 짧은 쪽(더 구체적) ④ id
+        adjusted.sort(key=lambda row: (-(row[1] + row[2]), -row[3], len(normalize(row[0].question_ko)), row[0].id))
+        return [Match(faq=faq, score=score, method=self.method, content=content) for faq, score, content, _ in adjusted[:top_k]]
 
     def answer(self, query: str, lang: str | None = None) -> Match | None:
         """임계값을 넘는 최상위 1건을 반환한다. 없으면 None(= 사무실 문의 안내)."""
