@@ -68,12 +68,7 @@ _NOTRANSLATE_HTML = (
     "}catch(e){}</script>"
 )
 try:
-    if hasattr(st, "iframe"):  # 최신 Streamlit: components.v1.html 은 곧 없어진다는 경고가 있어 st.iframe 을 쓴다
-        st.iframe(_NOTRANSLATE_HTML, height=1)
-    else:
-        import streamlit.components.v1 as components
-
-        components.html(_NOTRANSLATE_HTML, height=0)
+    st.iframe(_NOTRANSLATE_HTML, height=1)
 except Exception:  # noqa: BLE001 - 번역 방지는 있으면 좋은 보조 기능이다. 실패해도 앱은 그대로 동작해야 한다
     pass
 
@@ -278,9 +273,8 @@ if not ai_available:
     st.session_state.ai_on = False
 st.session_state.ai_toggle = st.session_state.ai_on  # 화면 언어가 바뀌어 위젯이 새로 만들어져도 상태 유지
 # st.chat_input 은 최상위에서 호출하면 화면 맨 아래 영역(st.bottom)에 고정된다. 같은 영역에 토글을 먼저 그리면
-# 토글이 입력창 바로 위에 놓인다. st.bottom 이 없는 옛 버전은 st._bottom, 그것도 없으면 일반 컨테이너로 대신한다.
-bottom_zone = getattr(st, "bottom", None) or getattr(st, "_bottom", None) or st.container()
-with bottom_zone:
+# 토글이 입력창 바로 위에 놓인다.
+with st.bottom:
     st.toggle(
         t("ai_toggle"),
         key="ai_toggle",
