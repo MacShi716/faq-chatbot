@@ -524,35 +524,44 @@ try:
     from datetime import date as _date
 
     import linkify
-    from chat_logic import AI_MIN_CONTENT_SCORE, AI_STRONG_SCORE, is_confident_match
+    from chat_logic import MIN_CONTENT_SCORE, STRONG_SCORE, is_answerable, pick_match
+    from normalize import split_variants
 
     ZW = "你是什\u200b\u200b么模型"  # 사용자가 실제로 보낸 질문(보이지 않는 글자 포함)
     check("normalize: 보이지 않는 글자(ZWSP·BOM 등)를 지운다", normalize(ZW) == normalize("你是什么模型") and "\u200b" not in normalize(ZW))
     check("normalize: 일반 질문은 그대로", normalize("休学怎么办") == normalize("休学怎么办"))
 
-    # --- 가드: AI 가 켜져 있을 때만 적용
+    # --- 가드: AI 토글과 상관없이 적용(QA AC-1: 예전에는 AI 꺼짐이면 약한 우연 일치도 FAQ 답으로 나왔다)
     off = _build_entry("你是什么模型", hist("你是什么模型"), index, ai_enabled=False)
-    check("가드는 AI 꺼짐에서는 적용되지 않는다(예전 동작 그대로: FAQ 매칭)", off["kind"] == "match", off.get("kind"))
+    check("가드는 AI 꺼짐에서도 적용된다(你是什么模型 → 답 없음, F23 아님)", off["kind"] == "none" and "faq" not in off, off.get("kind"))
     for q in ("你是什么模型", ZW, "你是谁", "今天几号", "今天星期几", "今天是什么日子", "韩国手机卡怎么办"):
         setup(CF_ONLY, lambda url, h, p: cf_ok("테스트 답변"))
         e = build_entry(q, hist(q), index, session_key="g")
         check(f"가드(AI 켜짐): {q!r} 는 FAQ 에 잘못 붙지 않고 AI 로 간다", e["kind"] == "ai" and len(CALLS) == 1, (e.get("kind"), e.get("faq") and e["faq"].id))
     check("가드: 약한 일치의 '혹시 이런 질문인가요?' 제안은 걸러진다", not build_entry("你是什么模型", hist("x"), index, session_key="g2")["suggestions"])
-    # 진짜 FAQ 질문은 가드를 통과한다(잃는 것 없음)
-    lost = []
+    # 진짜 FAQ 질문(모든 ko/zh 표현)은 가드를 통과해 자기 FAQ 로 답한다(잃는 것 없음). 미작성 초안은 답하지 않는다.
+    drafts = {f.id for f in faqs if not is_answerable(f)}
+    lost, other, draft_hit = [], [], []
     for f in faqs:
         for lg, qtxt in (("ko", f.question_ko), ("zh", f.question_zh)):
-            if not qtxt:
-                continue
-            m = index.answer(qtxt, lang=lg)
-            if m is None or not is_confident_match(qtxt, m, lg):
-                lost.append((f.id, lg, qtxt, m and round(m.score, 2)))
-    check("가드: 모든 FAQ 자기 질문(ko/zh 질문)은 가드를 통과한다", not lost, lost[:5])
+            for n, qv in enumerate(split_variants(qtxt)):
+                m = pick_match(qv, index.search(qv, lang=lg, top_k=3), lg)
+                if f.id in drafts:
+                    if m is not None:
+                        draft_hit.append((f.id, lg, qv, m.faq.id))
+                elif m is None or (n == 0 and m.faq.id != f.id):
+                    lost.append((f.id, lg, qv, m and (m.faq.id, round(m.score, 2))))
+                elif m.faq.id != f.id:
+                    other.append((f.id, qv, m.faq.id))
+    check("가드: 미작성이 아닌 FAQ 의 모든 표현(ko/zh)이 답을 받고, 대표 질문은 자기 FAQ 로 답한다", not lost, lost[:5])
+    check("미작성 초안 FAQ 의 자기 질문은 어떤 FAQ 답도 받지 않는다(답 없음)", not draft_hit, draft_hit[:5])
+    if other:  # 같은 표현이 두 FAQ 에 들어 있는 데이터 중복(가드와 무관, faq.csv 정리 대상)
+        print(f"  NOTE 같은 표현이 다른 FAQ 에도 있어 그쪽으로 답함: {other}")
     for q, fid in (("休学怎么办", "F01"), ("휴학 신청은 언제 해요?", "F01")):
         setup(CF_ONLY, lambda url, h, p: cf_ok())
         e = build_entry(q, hist(q), index, session_key="g3")
         check(f"가드: 진짜 FAQ 질문 {q!r} 은 그대로 매칭({fid}), AI 호출 없음", e["kind"] == "match" and e["faq"].id == fid and not CALLS, (e.get("kind"), CALLS and len(CALLS)))
-    check("가드 기준값(강한 일치 0.65 / 알맹이 일치 0.40)", (AI_STRONG_SCORE, AI_MIN_CONTENT_SCORE) == (0.65, 0.40))
+    check("가드 기준값(강한 일치 0.65 / 알맹이 일치 0.60)", (STRONG_SCORE, MIN_CONTENT_SCORE) == (0.65, 0.60))
 
     # --- 오늘 날짜(Asia/Seoul)·모델명이 시스템 프롬프트에 들어간다
     setup(CF_ONLY, lambda url, h, p: cf_ok())
@@ -632,6 +641,67 @@ try:
     # --- 中文 라벨
     check("zh ai_label 정확한 문구(未经确认)", STRINGS["zh"]["ai_label"] == "🤖 AI自主回答，未经确认（FAQ中没有这个问题，由AI直接回答）")
     check("i18n 어디에도 '默认确认'(번역기가 바꾼 잘못된 문구)이 없다", not [(lg, k) for lg in STRINGS for k, v in STRINGS[lg].items() if "默认确认" in str(v)])
+
+    # ============================================================ [14] QA 인수 테스트 AC-1(2026-10-29) 회귀 점검
+    print("[14] QA AC-1: 약한 매칭 가드(AI 꺼짐/켜짐) · 미작성 초안 제외 · 평가 화면 기준 · 타자 효과 링크")
+    check("[준비] 미작성 초안 FAQ 목록에 F21 이 있다", "F21" in drafts, sorted(drafts))
+    from chat_logic import content_score, is_confident_match
+
+    m_ko = index.search("你会说韩语吗", lang="zh", top_k=1)[0]
+    check("가드 자체도 '你会说韩语吗'→F21(알맹이 '说韩语' vs '韩语等级' 0.57)을 약한 일치로 본다(F21 을 채워도 붙지 않게)",
+          m_ko.faq.id == "F21" and not is_confident_match("你会说韩语吗", m_ko, "zh"), (m_ko.faq.id, round(content_score("你会说韩语吗", m_ko.faq, "zh"), 3)))
+    check("is_answerable: [작성 필요]/[작성 예정]/[待填写]/빈 답변은 답으로 쓰지 않는다",
+          not any(is_answerable(Faq("T", "q", "q", a, "", "")) for a in ("[작성 필요] x", "[작성 예정] x", "[待填写] x", "", "  "))
+          and is_answerable(Faq("T", "q", "q", "휴학 신청은 3월에 해요.", "", "")))
+    QA = (("你会说韩语吗", "F21"), ("학교 수영장 몇 시까지 해요?", "F01"), ("파이썬 리스트 정렬 어떻게 해요?", "F42"))
+    for q, wrong in QA:
+        setup(CF_ONLY, lambda url, h, p: cf_ok("테스트 답변"))
+        e = _build_entry(q, hist(q), index, ai_enabled=False)
+        sug = [f.id for f in e["suggestions"]]
+        check(f"QA(AI 꺼짐) {q!r}: 답 없음(학과 사무실 안내), {wrong} 답 아님, AI 호출 없음",
+              e["kind"] == "none" and "faq" not in e and not e.get("template") and not CALLS, (e.get("kind"), e.get("faq") and e["faq"].id))
+        check(f"QA(AI 꺼짐) {q!r}: 제안에 {wrong}·미작성 초안 없음", wrong not in sug and not set(sug) & drafts, sug)
+        e = build_entry(q, hist(q), index, session_key="qa")
+        sug = [f.id for f in e["suggestions"]]
+        check(f"QA(AI 켜짐) {q!r}: FAQ 답이 아니라 Tier B(AI 답변 또는 학교 정보 고정 안내)",
+              "faq" not in e and (e["kind"] == "ai" or e.get("template") is True), (e.get("kind"), e.get("faq") and e["faq"].id))
+        check(f"QA(AI 켜짐) {q!r}: 제안에 {wrong}·미작성 초안 없음", wrong not in sug and not set(sug) & drafts, sug)
+    # 미작성 초안: 답·제안·관련 질문 어디에도 나오지 않는다(AI 꺼짐/켜짐)
+    shown_drafts = []
+    for f in faqs:
+        for lg, qtxt in (("ko", f.question_ko), ("zh", f.question_zh)):
+            for qv in split_variants(qtxt)[:1]:
+                for ai_on in (False, True):
+                    setup(CF_ONLY, lambda url, h, p: cf_ok("테스트 답변"))
+                    e = _build_entry(qv, hist(qv), index, session_key="dr", ai_enabled=ai_on)
+                    ids = {x.id for x in e.get("suggestions", []) + e.get("related", [])} | ({e["faq"].id} if "faq" in e else set())
+                    if ids & drafts:
+                        shown_drafts.append((f.id, lg, ai_on, sorted(ids & drafts)))
+    check("미작성 초안은 답·제안·관련 질문에 나오지 않는다(모든 FAQ 질문, AI 꺼짐/켜짐)", not shown_drafts, shown_drafts[:5])
+    # 평가(evaluate.py)의 화면 기준: 미작성이 아닌 맞는 매칭은 잃지 않고, 약한 오매칭은 답 없음으로
+    import evaluate as ev
+
+    rep = ev.run("difflib", 0.4, DEFAULT_FAQ_PATH, ev.DEFAULT_EVAL_PATH)
+    byq = {r["qid"]: r for r in rep["results"]}
+    lost_eval = [r["qid"] for r in rep["results"] if r["correct"] and not r["app_correct"] and r["expected"] not in drafts]
+    check("evaluate 화면 기준: 미작성 초안이 아닌 맞는 매칭은 하나도 잃지 않는다", not lost_eval, lost_eval)
+    check("evaluate 화면 기준: 화면 답은 검색 1위와 같거나 '답 없음'(다른 FAQ 로 바뀌지 않는다)",
+          all(r["app_predicted"] in ("", r["predicted"]) for r in rep["results"]))
+    check("evaluate 화면 기준: 미작성 초안 FAQ 는 답으로 나오지 않는다", not {r["app_predicted"] for r in rep["results"]} & drafts)
+    check("evaluate 화면 기준: 약한 오매칭 K03(다시 학교 다니려면→F01)·Z21(校车时刻表→F12)은 답 없음",
+          byq["K03"]["app_predicted"] == "" and byq["Z21"]["app_predicted"] == "", (byq["K03"]["app_predicted"], byq["Z21"]["app_predicted"]))
+    z03 = byq["Z03"]
+    print(f"  NOTE 알려진 한계: Z03 什么时候可以复学 → 화면 {z03['app_predicted'] or '(답 없음)'} (기대 F02, 유사도 {z03['score']:.3f}). "
+          "강한 일치(0.65 이상)라 가드로 거를 수 없다(검색 순위 문제)")
+    # 타자 효과(KI-2): 링크를 두 글자씩 쪼개면 타이핑 도중 마크다운 원문이 보인다
+    tc = linkify.typing_chunks
+    s1 = sl("详见（www.kyungnam.ac.kr）确认")
+    ch = tc(s1)
+    check("타자 효과: 링크는 한 조각, 이어 붙이면 원문 그대로", "".join(ch) == s1 and "[www.kyungnam.ac.kr](<https://www.kyungnam.ac.kr>)" in ch, ch)
+    s2 = "x " + sl("https://a.kr/a_b_c") + " y"
+    check("타자 효과: 링크 없는 글은 2글자씩, 밑줄 이스케이프 링크도 한 조각",
+          tc("가나다라마") == ["가나", "다라", "마"] and tc("") == [] and sl("https://a.kr/a_b_c") in tc(s2) and "".join(tc(s2)) == s2)
+    check("app.py: typewriter 가 linkify.typing_chunks 를 쓴다", "linkify.typing_chunks(" in app_src2)
 finally:
     la._get, la._http_post, la._now, la.LOG_PATH = _saved
     la.reset_state()

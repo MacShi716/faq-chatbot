@@ -7,6 +7,8 @@
 
 import argparse
 
+from chat_logic import pick_match
+from normalize import detect_lang
 from retriever import DEFAULT_FAQ_PATH, DEFAULT_THRESHOLD, Retriever, load_faqs
 
 SAMPLE = [
@@ -32,15 +34,16 @@ def main() -> None:
     print("=" * 78)
 
     for q in SAMPLE:
-        top = index.search(q, top_k=2)
-        hit = index.answer(q)
+        lang = detect_lang(q)
+        top = index.search(q, lang=lang, top_k=2)
+        hit = pick_match(q, top, lang, args.threshold)  # 화면과 같은 판단(약한 매칭 가드·미작성 초안 제외)
         print(f"\n[질문] {q}")
         if hit:
             print(f"  → {hit.faq.id} (유사도 {hit.score:.2f})")
             print(f"    {hit.faq.answer[:70]}")
             print(f"    출처: {hit.faq.source or '-'} / 확인일: {hit.faq.checked_at or '-'}")
         else:
-            best = f" (최고 후보 {top[0].score:.2f} < {args.threshold})" if top else ""
+            best = f" (최고 후보 {top[0].score:.2f}, 임계값 {args.threshold} 미달·약한 일치·미작성 초안)" if top else ""
             print(f"  → 답변 없음 · 학과 사무실 문의 안내{best}")
         if top:
             print("    후보: " + ", ".join(f"{m.faq.id}({m.score:.2f})" for m in top))

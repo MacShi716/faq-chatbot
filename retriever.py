@@ -27,7 +27,7 @@ TAG_HIT_SCORE = 0.7
 REQUIRED_COLUMNS = {"id", "question_ko", "question_zh", "answer", "source", "checked_at"}
 
 # 아직 확인하지 않은 답변을 표시하는 문자열. 이게 들어 있으면 "미작성"으로 본다.
-PLACEHOLDER_MARKERS = ("[작성 필요]", "[待填写]")
+PLACEHOLDER_MARKERS = ("[작성 필요]", "[작성 예정]", "[待填写]")
 
 
 def is_filled(text: str) -> bool:

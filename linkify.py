@@ -18,6 +18,8 @@ _URL = re.compile(
 )
 _TRAIL = ".,;:!?'"
 _MD_ESCAPE = re.compile(r"([\\`*_{}\[\]<>])")
+# safe_links 가 만든 [표시](<주소>) 링크 (표시 글자 안의 \[ \] 같은 이스케이프 포함)
+_MD_LINK = re.compile(r"\[(?:\\.|[^\]\\])*\]\(<[^>]*>\)")
 
 
 def _split_trailing(url: str) -> tuple[str, str]:
@@ -46,3 +48,20 @@ def safe_links(text: str) -> str:
         return f"[{label}](<{href}>){tail}"
 
     return _URL.sub(repl, text)
+
+
+def typing_chunks(text: str, size: int = 2) -> list[str]:
+    """타자 효과용 조각(size 글자씩). [표시](<주소>) 링크는 쪼개지 않고 한 조각으로 둔다.
+
+    두 글자씩 자르면 타이핑 도중 '[www.kyungnam.ac.kr](<https' 같은 마크다운 원문이 잠깐 보인다.
+    """
+    text = text or ""
+
+    def pieces(plain: str) -> list[str]:
+        return [plain[i : i + size] for i in range(0, len(plain), size)]
+
+    out, pos = [], 0
+    for m in _MD_LINK.finditer(text):
+        out += pieces(text[pos : m.start()]) + [m.group(0)]
+        pos = m.end()
+    return out + pieces(text[pos:])

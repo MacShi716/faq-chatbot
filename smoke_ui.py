@@ -121,7 +121,6 @@ UNV = "미확인 답변"
 for q, expect_badge, label in [
     ("휴학 신청은 언제 해요?", True, "F01 待确认(checked_at 없음)"),
     ("한마상 어디예요", True, "F46 待确认(중문 명칭 추정)"),
-    ("학과 사무실은 어디에 있어요?", True, "F10 待收集答案(자리표시자)"),
     ("제1공학관 어디예요", False, "F13 已确认(확인일 2026-10-28)"),
     ("법정관 어디예요", False, "지도 행 已确认"),
 ]:
@@ -131,6 +130,13 @@ for q, expect_badge, label in [
     check("예외 없음: " + q, not at7.exception, at7.exception)
     text = all_text(at7)
     check(label + (" → 배지 있음" if expect_badge else " → 배지 없음"), (UNV in text) == expect_badge, text[-300:])
+
+at7 = AppTest.from_file("app.py", default_timeout=60)
+at7.run()
+at7.chat_input[0].set_value("학과 사무실은 어디에 있어요?").run()
+text = all_text(at7)
+check("F10 미작성 초안([작성 필요]) → 답 없음 안내, 초안 문구·FAQ id 없음",
+      not at7.exception and "죄송합니다" in text and "[작성 필요]" not in text and "F10" not in text, at7.exception or text[-300:])
 
 print("[8] Tier B: AI 자율 답변 화면 (HTTP 는 가짜, 실제 호출 없음)")
 import re
@@ -433,6 +439,29 @@ try:
     check("AI 답변 속 URL: 뒤에 붙은 전각 괄호·쉼표·한자와 분리된 링크",
           "（[www.kyungnam.ac.kr](<https://www.kyungnam.ac.kr>)），或" in text
           and "[https://www.hikorea.go.kr](<https://www.hikorea.go.kr>)）谢谢" in text, a13.exception or text[-400:])
+
+    print("[12] QA 인수 테스트 AC-1: 약한 매칭·미작성 초안은 AI 꺼짐에서도 FAQ 답으로 나오지 않는다")
+    QA = (("zh", "你会说韩语吗", "F21", "抱歉，没有找到匹配的回答", "[待填写]"),
+          ("ko", "학교 수영장 몇 시까지 해요?", "F01", "죄송합니다", "[작성 필요]"),
+          ("ko", "파이썬 리스트 정렬 어떻게 해요?", "F42", "죄송합니다", "[작성 필요]"))
+    for ai_on, cfg in ((False, {}), (True, ON)):
+        for lg, q, wrong, sorry, marker in QA:
+            install(cfg)
+            aq = new_app(ai=ai_on)
+            if lg == "zh":
+                aq.get("segmented_control")[0].set_value("zh")
+                aq.run()
+            aq.chat_input[0].set_value(q).run()
+            text = all_text(aq)
+            tag = "AI 켜짐" if ai_on else "AI 꺼짐"
+            no_faq = f"FAQ {wrong}" not in text and "· FAQ F" not in text and marker not in text and "근거:" not in text and "依据：" not in text
+            if ai_on:
+                check(f"QA({tag}) {q!r}: FAQ {wrong} 답·출처 없이 AI 답변 또는 고정 안내",
+                      not aq.exception and no_faq and (LABEL_KO in text or LABEL_ZH in text or "FAQ에 아직" in text or "FAQ里还没有" in text),
+                      aq.exception or text[-300:])
+            else:
+                check(f"QA({tag}) {q!r}: 답 없음 안내(학과 사무실 문의), FAQ {wrong} 답·출처·초안 문구 없음, AI 호출 없음",
+                      not aq.exception and sorry in text and no_faq and not CALLS, aq.exception or text[-300:])
 finally:
     la._get, la._http_post, la.LOG_PATH = _saved
     la.reset_state()

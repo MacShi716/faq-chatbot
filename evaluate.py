@@ -8,6 +8,10 @@
 정확도 정의(계획서와 동일):
     상위 1건 매칭 FAQ 의 id 가 expected_id 와 같으면 정답.
     임계값 미달로 답변하지 않은 경우도 오답으로 계산한다.
+
+'화면 기준' 정확도도 함께 낸다: 화면(chat_logic.pick_match)과 같은 판단으로 약한 매칭 가드·미작성 초안을 적용해
+실제로 답으로 보여주는 FAQ 가 expected_id 와 같으면 정답. 답 없음(학과 사무실 문의 안내)은 오답으로 센다.
+주의: 질문 작성자와 정답 작성자가 같은 내부 평가셋이라 점수가 실제보다 좋게 나올 수 있다.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from chat_logic import pick_match
 from normalize import detect_lang
 from retriever import DEFAULT_FAQ_PATH, DEFAULT_THRESHOLD, Retriever, load_faqs
 
@@ -47,14 +52,18 @@ def run(method: str, threshold: float, faq_path: Path, eval_path: Path) -> dict:
         hit = bool(candidates) and candidates[0].score >= threshold
         predicted = candidates[0].faq.id if hit else ""
         score = candidates[0].score if candidates else 0.0
+        shown = pick_match(question, candidates, lang, threshold)  # 화면에 실제로 답으로 나오는 FAQ
+        app_predicted = shown.faq.id if shown else ""
         results.append({
             "qid": row["qid"], "lang": lang, "question": question,
             "expected": expected, "predicted": predicted,
             "score": score, "correct": predicted == expected,
+            "app_predicted": app_predicted, "app_correct": app_predicted == expected,
         })
 
     total = len(results)
     correct = sum(r["correct"] for r in results)
+    app_correct = sum(r["app_correct"] for r in results)
     by_lang = {}
     for lang in ("ko", "zh"):
         subset = [r for r in results if r["lang"] == lang]
@@ -68,6 +77,7 @@ def run(method: str, threshold: float, faq_path: Path, eval_path: Path) -> dict:
         "method": method, "threshold": threshold, "total": total, "correct": correct,
         "accuracy": correct / total * 100 if total else 0.0,
         "by_lang": by_lang, "results": results,
+        "app_correct": app_correct, "app_accuracy": app_correct / total * 100 if total else 0.0,
     }
 
 
@@ -82,6 +92,8 @@ def write_report(report: dict, out_dir: Path) -> Path:
         f"- 실행 시각: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         f"- 임계값: {report['threshold']}",
         f"- 전체 정확도: **{report['correct']}/{report['total']} = {report['accuracy']:.1f}%**",
+        f"- 화면 기준(약한 매칭 가드·미작성 초안 제외): **{report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%**",
+        "- 내부 평가셋(질문 작성자 = 정답 작성자)이라 실제 사용자 질문보다 점수가 좋게 나올 수 있다.",
         "",
         "## 언어별",
         "",
@@ -99,6 +111,17 @@ def write_report(report: dict, out_dir: Path) -> Path:
         for r in failures:
             q = r["question"].replace("|", "\\|")
             lines.append(f"| {r['qid']} | {q} | {r['expected']} | {r['predicted'] or '(미응답)'} | {r['score']:.3f} |")
+    else:
+        lines.append("없음")
+
+    changed = [r for r in report["results"] if r["app_predicted"] != r["predicted"]]
+    lines += ["", f"## 화면 기준에서 달라진 문항 {len(changed)}건", ""]
+    if changed:
+        lines += ["| 문항 | 질문 | 기대 | 검색 1위 | 화면 | 유사도 |", "|---|---|---|---|---|---|"]
+        for r in changed:
+            q = r["question"].replace("|", "\\|")
+            lines.append(f"| {r['qid']} | {q} | {r['expected']} | {r['predicted'] or '(미응답)'} | "
+                         f"{r['app_predicted'] or '(답 없음)'} | {r['score']:.3f} |")
     else:
         lines.append("없음")
 
@@ -123,6 +146,7 @@ def main() -> int:
     for lang, label in (("ko", "한국어"), ("zh", "중국어")):
         s = report["by_lang"][lang]
         print(f"  {label}: {s['correct']}/{s['total']} = {s['accuracy']:.1f}%")
+    print(f"화면 기준(약한 매칭 가드·미작성 초안 제외) {report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%")
     print(f"보고서: {path}")
     return 0
 

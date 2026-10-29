@@ -120,10 +120,10 @@ def render_candidates(candidates) -> None:
 
 
 def typewriter(text: str):
-    """답변을 조금씩 보여주는 효과(전체 약 0.5초 안팎)."""
+    """답변을 조금씩 보여주는 효과(전체 약 0.5초 안팎). 링크는 한 번에 보여 마크다운 원문이 비치지 않게 한다."""
     delay = min(0.012, 1.0 / max(len(text), 1))
-    for i in range(0, len(text), 2):
-        yield text[i : i + 2]
+    for chunk in linkify.typing_chunks(text):
+        yield chunk
         time.sleep(delay)
 
 

@@ -13,17 +13,21 @@ import re
 
 from llm_answer import free_answer
 from normalize import detect_lang, normalize
+from retriever import DEFAULT_THRESHOLD, is_filled
 
 # "혹시 이런 질문인가요?" 후보로 보여줄 최소 유사도(너무 동떨어진 후보는 숨긴다).
 SUGGEST_MIN_SCORE = 0.2
 
-# --- AI 대화가 켜져 있을 때만 쓰는 '약한 매칭' 가드 (꺼져 있으면 기존 동작·evaluate 그대로) --------------------
+# --- '약한 매칭' 가드 (AI 대화 토글과 상관없이 항상 적용) -------------------------------------------------------
 # 문제: difflib 는 "你是什么模型" 과 "学正时是什么？" 처럼 '是什么' 같은 흔한 의문 표현만 겹쳐도 0.5 가 나온다.
-#       임계값(0.4)만 넘으면 학교와 무관한 질문에도 FAQ 답이 붙어 AI 가 답할 기회가 사라진다.
-# 해결: 유사도가 AI_STRONG_SCORE 이상(태그 적중은 항상 0.7 이상)이면 그대로 믿고,
-#       그보다 약하면 '흔한 의문 표현을 뺀 알맹이'끼리의 유사도(content_score)가 AI_MIN_CONTENT_SCORE 이상일 때만 믿는다.
-AI_STRONG_SCORE = 0.65
-AI_MIN_CONTENT_SCORE = 0.40
+#       임계값(0.4)만 넘으면 학교와 무관한 질문("학교 수영장 몇 시까지 해요?" → 휴학)에도 FAQ 답이 붙는다.
+# 해결: 유사도가 STRONG_SCORE 이상(태그 적중은 항상 0.7 이상)이면 그대로 믿고,
+#       그보다 약하면 '흔한 의문 표현을 뺀 알맹이'끼리의 유사도(content_score)가 MIN_CONTENT_SCORE 이상일 때만 믿는다.
+#       믿을 수 없는 매칭은 AI 꺼짐이면 '답 없음(학과 사무실 문의)' + 걸러진 제안, AI 켜짐이면 Tier B 로 간다.
+# MIN_CONTENT_SCORE: 0.40 이면 "你会说韩语吗"(알맹이 '说韩语' vs F21 태그 '韩语等级' = 0.57)가 통과했다.
+#       평가셋과 FAQ 표현 빼고 넣기(leave-one-out) 점검에서 0.4~0.65 구간의 맞는 매칭은 모두 0.60 이상이었다.
+STRONG_SCORE = 0.65
+MIN_CONTENT_SCORE = 0.60
 
 _GENERIC_WORDS = (
     # 中文 의문·조동 표현
@@ -55,8 +59,33 @@ def content_score(query: str, faq, lang: str) -> float:
 
 
 def is_confident_match(query: str, match, lang: str) -> bool:
-    """AI 대화가 켜져 있을 때, 이 FAQ 매칭을 믿어도 되는가(약한 우연 일치가 아닌가)."""
-    return match.score >= AI_STRONG_SCORE or content_score(query, match.faq, lang) >= AI_MIN_CONTENT_SCORE
+    """이 FAQ 매칭을 믿어도 되는가(흔한 의문 표현만 겹친 약한 우연 일치가 아닌가)."""
+    return match.score >= STRONG_SCORE or content_score(query, match.faq, lang) >= MIN_CONTENT_SCORE
+
+
+def is_answerable(faq) -> bool:
+    """답으로 보여줄 수 있는 FAQ 인가. 미작성 초안([작성 필요]/[待填写]·빈 답변)은 답·제안·관련 질문에서 뺀다."""
+    return is_filled(faq.answer)
+
+
+def pick_match(query: str, top: list, lang: str, threshold: float = DEFAULT_THRESHOLD):
+    """검색 결과(top, 유사도 순)에서 답으로 보여줄 매칭. 없으면 None(= 답 없음 / Tier B).
+
+    1위가 임계값 미달·미작성 초안·약한 우연 일치면 None 이다(2위로 내려가지 않는다: 엉뚱한 답보다 '답 없음'이 낫다).
+    화면(build_entry)과 evaluate.py 가 같은 판단을 쓴다.
+    """
+    if not top:
+        return None
+    best = top[0]
+    if best.score < threshold or not is_answerable(best.faq) or not is_confident_match(query, best, lang):
+        return None
+    return best
+
+
+def suggestions_for(query: str, top: list, lang: str) -> list:
+    """'혹시 이런 질문인가요?' 제안. 미작성 초안과 약한 우연 일치는 뺀다."""
+    return [c.faq for c in top
+            if c.score >= SUGGEST_MIN_SCORE and is_answerable(c.faq) and is_confident_match(query, c, lang)]
 
 
 _INTENTS: dict[str, set[str]] = {
@@ -100,7 +129,7 @@ def related_faqs(candidates, matched_faq, min_score: float = 0.3, limit: int = 2
     """방금 답한 FAQ 말고, 이어서 물어볼 만한 FAQ(유사도 min_score 이상)를 최대 limit 개."""
     out = []
     for cand in candidates:
-        if cand.faq.id != matched_faq.id and cand.score >= min_score:
+        if cand.faq.id != matched_faq.id and cand.score >= min_score and is_answerable(cand.faq):
             out.append(cand.faq)
         if len(out) >= limit:
             break
@@ -113,9 +142,9 @@ def _talk(key: str) -> dict:
 def build_entry(prompt: str, history: list[dict], index, session_key: str = "default", ai_enabled: bool = False) -> dict:
     """질문 한 건에 대한 답변 기록(dict)을 만든다. 화면 그리기는 app.py 가 맡는다.
 
-    Tier A: FAQ 매칭 → kind "match" (FAQ 답변 그대로, 출처·확인일).
+    Tier A: FAQ 매칭(pick_match: 임계값·약한 매칭 가드·미작성 제외) → kind "match" (FAQ 답변 그대로, 출처·확인일).
     Tier B: 매칭 실패 + ai_enabled(사용자가 화면 토글을 켬) + 서버 LLM_ENABLED → kind "ai" (AI 자율 답변, 출처 없음).
-    ai_enabled 가 False(기본)이거나 서버가 꺼져 있거나 실패하면 kind "none".
+    ai_enabled 가 False(기본)이거나 서버가 꺼져 있거나 실패하면 kind "none"(학과 사무실 문의 안내 + 제안).
     """
     intent = detect_intent(prompt)
     if intent in ("greet", "thanks", "bye", "help"):
@@ -133,35 +162,29 @@ def build_entry(prompt: str, history: list[dict], index, session_key: str = "def
     lang = detect_lang(prompt)
     top = index.search(prompt, lang=lang, top_k=3)
     candidates = [(c.score, c.faq.id, c.faq.question_ko) for c in top]
-    match = index.answer(prompt, lang=lang)
-    # AI 대화가 켜져 있으면 약한 우연 일치(흔한 의문 표현만 겹침)는 '매칭 없음'으로 보고 Tier B 로 보낸다.
-    weak = match is not None and ai_enabled and not is_confident_match(prompt, match, lang)
-    if match is None or weak:
+    # 약한 우연 일치(흔한 의문 표현만 겹침)·미작성 초안은 AI 토글과 상관없이 '매칭 없음'으로 본다.
+    match = pick_match(prompt, top, lang, index.threshold)
+    if match is None:
         best = top[0].score if top else None
         none_entry = {
             "role": "assistant",
             "kind": "none",
             "best": best,
-            "suggestions": [c.faq for c in top if c.score >= SUGGEST_MIN_SCORE],
+            "suggestions": suggestions_for(prompt, top, lang),
             "candidates": candidates,
         }
-        try:  # Tier B (사용자가 안 켰거나 서버가 꺼져 있으면 None → 기존 동작 그대로)
+        try:  # Tier B (사용자가 안 켰거나 서버가 꺼져 있으면 None → 답 없음 안내)
             ai = free_answer(prompt, lang, best=best, key=session_key, ai_enabled=ai_enabled)
         except Exception:  # noqa: BLE001 - LLM 쪽 문제로 대화가 끊기면 안 된다
             ai = {"kind": "unavailable"}
         if ai is None:
-            if not weak:
-                return none_entry
-            # weak 인데 AI 가 실제로는 꺼져 있었다 → 예전 동작(FAQ 매칭 그대로)으로 아래에서 match 항목을 만든다.
-        elif ai.get("kind") == "ai":
+            return none_entry
+        if ai.get("kind") == "ai":
             # 답변 문장을 기록에 저장해 두므로 화면이 다시 그려져도 LLM 을 다시 부르지 않는다.
-            # 제안(혹시 이런 질문인가요?)은 우연히 비슷한 것들을 걸러 낸다(AI 가 이미 답했으므로).
-            sure = [c.faq for c in top if is_confident_match(prompt, c, lang)]
-            return {**none_entry, "kind": "ai", "text": ai["text"], "model": ai.get("model", ""), "suggestions": sure}
-        elif ai.get("kind") == "template":
+            return {**none_entry, "kind": "ai", "text": ai["text"], "model": ai.get("model", "")}
+        if ai.get("kind") == "template":
             return {**none_entry, "template": True}
-        else:
-            return {**none_entry, "ai_failed": True}
+        return {**none_entry, "ai_failed": True}
     return {
         "role": "assistant",
         "kind": "match",
