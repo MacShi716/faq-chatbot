@@ -46,7 +46,7 @@ _reload_stale_local_modules()
 
 from chat_logic import build_entry
 from i18n import LANG_LABELS, LANGS, get_lang, t
-from linkify import safe_links
+from linkify import escape_markdown, safe_links, safe_markdown
 from llm_answer import is_available
 from retriever import DEFAULT_FAQ_PATH, DEFAULT_THRESHOLD, Retriever, is_filled, load_faqs
 
@@ -99,16 +99,16 @@ def get_retriever(faq_path: str, method: str, threshold: float) -> Retriever:
 
 
 def render_source(faq, score: float, method: str) -> None:
+    # 출처·확인일은 데이터라 safe_markdown(링크 + 마크다운 특수 문자 이스케이프)을 거쳐 문구 틀에 넣는다.
+    # (URL 이 뒤따르는 전각 부호·한자와 한 링크로 합쳐지지 않고, '~' 가 취소선이 되지 않게 한다)
     st.caption(
-        safe_links(  # 출처 안의 URL 이 뒤따르는 글자와 한 링크로 합쳐지지 않게 한다
-            t(
-                "source",
-                source=faq.source or t("source_unknown"),
-                checked=faq.checked_at or t("checked_unknown"),
-                id=faq.id,
-                score=score,
-                method=method,
-            )
+        t(
+            "source",
+            source=safe_markdown(faq.source) if faq.source else t("source_unknown"),
+            checked=safe_markdown(faq.checked_at) if faq.checked_at else t("checked_unknown"),
+            id=faq.id,
+            score=score,
+            method=method,
         )
     )
 
@@ -116,7 +116,7 @@ def render_source(faq, score: float, method: str) -> None:
 def render_candidates(candidates) -> None:
     with st.expander(t("candidates")):
         for score, faq_id, question in candidates:
-            st.write(f"{score:.3f} · {faq_id} · {question}")
+            st.write(f"{score:.3f} · {faq_id} · {escape_markdown(question)}")
 
 
 def typewriter(text: str):
@@ -127,8 +127,13 @@ def typewriter(text: str):
         time.sleep(delay)
 
 
-def say(text: str, stream: bool) -> None:
-    text = safe_links(text)  # 답변 속 URL 바로 뒤에 "，" "）" 같은 전각 부호·한자가 붙어도 링크가 깨지지 않게 한다
+def say(text: str, stream: bool, mode: str = "ui") -> None:
+    """mode: "data"(FAQ 답변) / "ai"(AI 답변) / "ui"(화면 문구). linkify.safe_markdown 참고.
+
+    답변 속 URL 바로 뒤에 "，" "）" 같은 전각 부호·한자가 붙어도 링크가 깨지지 않게 하고,
+    '9/1~9/28' 의 '~' 가 취소선, '$' 가 수식으로 그려지지 않게 이스케이프한다(타자 효과는 '\\~' 를 쪼개지 않는다).
+    """
+    text = safe_markdown(text, mode)
     if stream and text:
         st.write_stream(typewriter(text))
     else:
@@ -137,7 +142,8 @@ def say(text: str, stream: bool) -> None:
 
 def question_button(idx: int, faq, prefix: str) -> None:
     text = (faq.variants(get_lang()) or faq.variants("ko"))[0] or faq.question_ko
-    if st.button(text, key=f"{prefix}_{idx}_{faq.id}"):
+    # 버튼 라벨도 마크다운으로 그려진다: 라벨만 이스케이프하고, 눌렀을 때 보내는 질문은 원문 그대로
+    if st.button(escape_markdown(text), key=f"{prefix}_{idx}_{faq.id}"):
         st.session_state.pending_prompt = text
 
 
@@ -148,7 +154,7 @@ def render_match(idx: int, entry: dict, stream: bool) -> None:
         st.markdown(t(entry["lead"]))
     if not is_filled(reply) or not faq.checked_at:
         st.markdown(f":orange-badge[{t('unverified')}]")
-    say(reply, stream)
+    say(reply, stream, "data")
     if fell_back:
         st.caption(t("ko_original"))
     render_source(faq, entry["score"], entry["method"])
@@ -180,7 +186,7 @@ def render_none(idx: int, entry: dict, stream: bool) -> None:
 def render_ai(idx: int, entry: dict, stream: bool) -> None:
     """Tier B: FAQ 에 없는 질문에 대한 AI 자율 답변. 항상 라벨이 먼저, 출처 줄(render_source)은 절대 없다."""
     st.markdown(f":orange-badge[{t('ai_label')}]")
-    say(entry["text"], stream)
+    say(entry["text"], stream, "ai")
     st.caption(safe_links(t("ai_nudge")))
     if entry.get("model"):
         st.caption(t("ai_model", model=entry["model"]))
@@ -192,7 +198,7 @@ def render_entry(idx: int, entry: dict, show_debug: bool, stream: bool = False) 
     with st.chat_message(entry["role"]):
         kind = entry.get("kind")
         if kind is None:  # 사용자 말풍선
-            st.markdown(safe_links(entry["text"]))
+            st.markdown(safe_markdown(entry["text"]))  # 사용자가 쓴 글: 링크 + 마크다운 특수 문자 이스케이프
         elif kind == "talk":
             say(t(entry["key"]), stream)
         else:
@@ -314,7 +320,7 @@ if prompt:
     examples_box.empty()
     st.session_state.history.append({"role": "user", "text": prompt})
     with st.chat_message("user"):
-        st.markdown(safe_links(prompt))
+        st.markdown(safe_markdown(prompt))
 
     st.session_state.setdefault("session_id", uuid.uuid4().hex)  # AI 답변 속도 제한 단위
     entry = build_entry(

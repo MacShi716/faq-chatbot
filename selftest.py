@@ -634,7 +634,9 @@ try:
     f23 = next(f for f in faqs if f.id == "F23")
     check("F23 답변: 选课网址가 쉼표·한자를 빼고 링크로", "[https://sugang.kyungnam.ac.kr](<https://sugang.kyungnam.ac.kr>)，预选课" in sl(f23.answer_zh))
     app_src2 = Path("app.py").read_text(encoding="utf-8")
-    check("app.py: say·출처 줄·AI 안내·사용자 말풍선이 safe_links 를 거친다", app_src2.count("safe_links(") >= 5 and "from linkify import safe_links" in app_src2, app_src2.count("safe_links("))
+    n_safe = app_src2.count("safe_links(") + app_src2.count("safe_markdown(")
+    check("app.py: say·출처 줄·AI 안내·사용자 말풍선이 safe_links/safe_markdown 을 거친다",
+          n_safe >= 5 and re.search(r"^from linkify import .*\bsafe_links\b", app_src2, re.M) is not None, n_safe)
     check("app.py: 서버를 켜 둔 채 바뀐 linkify.py 도 다시 불러온다", "linkify" in app_src2.split("_LOCAL_MODULES")[1].split("\n")[0])
     check("i18n: ai_nudge 의 URL 앞뒤에 공백(한/중)", " www.kyungnam.ac.kr " in STRINGS["ko"]["ai_nudge"] and " www.kyungnam.ac.kr " in STRINGS["zh"]["ai_nudge"])
 
@@ -760,6 +762,97 @@ try:
     app_src3 = Path("app.py").read_text(encoding="utf-8")
     check("app.py: 답 없음 안내의 유사도는 chat_logic.shown_best 로 낸다(검색 1위 점수 직접 사용 안 함)",
           "chat_logic.shown_best(entry)" in app_src3 and 'score=entry["best"]' not in app_src3)
+    # ============================================================ [16] QA 인수 테스트 AC-1 3차(2026-10-29) 회귀 점검
+    print("[16] QA AC-1 3차: 박빙 1위(住宿舍要多少钱 F32/F07) · 마크다운 특수 문자('~' 취소선, '$' 수식) 이스케이프")
+    from chat_logic import NEAR_TIE_MARGIN, is_near_tie
+    from retriever import Match, _settle_near_tie
+
+    check("박빙 기준값(순위 점수 차 0.02)", NEAR_TIE_MARGIN == 0.02)
+    tdorm = index.search("住宿舍要多少钱", lang="zh", top_k=3)
+    check("순위: '住宿舍要多少钱' 1위는 F07(기숙사 일반, 태그 '宿舍'), F32(방학 중 요금)가 아니다",
+          tdorm[0].faq.id == "F07" and tdorm[0].tag_hits > next(m.tag_hits for m in tdorm if m.faq.id == "F32"),
+          [(m.faq.id, round(m.score, 3), round(m.rank_score, 3), m.tag_hits) for m in tdorm])
+    DORM = (("zh", "住宿舍要多少钱"), ("zh", "宿舍多少钱"), ("ko", "기숙사 얼마예요"), ("ko", "기숙사비 얼마예요"))
+    for lg, q in DORM:
+        for ai_on in (False, True):
+            setup(CF_ONLY, lambda url, h, p: cf_ok("테스트 답변"))
+            e = _build_entry(q, hist(q), index, session_key="qa3", ai_enabled=ai_on)
+            got = e["faq"].id if "faq" in e else None
+            tag = "AI 켜짐" if ai_on else "AI 꺼짐"
+            check(f"QA3({tag}) {q!r}: F07 또는 답 없음(+후보), 방학 중 요금 F32 답 아님",
+                  got in ("F07", None) and (got == "F07" or e["kind"] in ("none", "ai")), (e.get("kind"), got))
+            if got == "F07":
+                check(f"QA3({tag}) {q!r}: FAQ 로 답하면 AI 를 부르지 않는다", not CALLS, len(CALLS))
+    check("QA3: 방학을 묻는 '假期宿舍多少钱'·FAQ 자기 질문 '放假期间住宿舍多少钱' 은 그대로 F32",
+          pick_match("假期宿舍多少钱", index.search("假期宿舍多少钱", lang="zh", top_k=3), "zh").faq.id == "F32"
+          and pick_match("放假期间住宿舍多少钱？", index.search("放假期间住宿舍多少钱？", lang="zh", top_k=3), "zh").faq.id == "F32")
+    # 박빙 가드 단위 점검(가짜 FAQ)
+    fa, fb = Faq("TA", "a", "a", "a", "", ""), Faq("TB", "b", "b", "b", "", "")
+
+    def mt(f, s, c, h):
+        return Match(faq=f, score=s, method="t", content=c, tag_hits=h)
+
+    check("is_near_tie: 차 0.01·태그 같음 → 박빙(핵심 낱말과 상관없이 답 없음)", is_near_tie([mt(fa, 0.80, 0.50, 0), mt(fb, 0.79, 0.50, 0)]))
+    check("is_near_tie: 차 0.03 → 박빙 아님", not is_near_tie([mt(fa, 0.80, 0.50, 0), mt(fb, 0.77, 0.50, 0)]))
+    check("is_near_tie: 완전 동점(차 0)은 검색 동점 규칙에 맡긴다", not is_near_tie([mt(fa, 0.80, 0.50, 0), mt(fb, 0.80, 0.50, 0)]))
+    check("is_near_tie: 1위 태그 적중이 더 많으면 박빙 아님", not is_near_tie([mt(fa, 0.79, 0.50, 1), mt(fb, 0.80, 0.50, 0)]))
+    check("is_near_tie: 1위 유사도 1.0(FAQ 질문 그대로)은 박빙 아님", not is_near_tie([mt(fa, 1.0, 1.0, 0), mt(fb, 0.99, 1.0, 0)]))
+    rows = [(fa, 0.706, 0.667, 0), (fb, 0.700, 0.667, 1), (Faq("TC", "c", "c", "c", "", ""), 0.5, 0.3, 2)]
+    check("_settle_near_tie: 박빙 묶음 안에서만 태그 많은 쪽이 위로(묶음 밖은 그대로)",
+          [r[0].id for r in _settle_near_tie(rows)] == ["TB", "TA", "TC"])
+    check("_settle_near_tie: 유사도 1.0 이 끼면 바꾸지 않는다", [r[0].id for r in _settle_near_tie([(fa, 1.0, 1.0, 0), (fb, 0.995, 1.0, 1)])] == ["TA", "TB"])
+    # 이전 사례: 완전 동점이던 맞는 답은 그대로
+    for q, lg, want in (("생활관 들어가려면 어떻게 해요", "ko", "F07"), ("毕业条件是什么", "zh", "F03"), ("复学申请流程", "zh", "F02")):
+        pm = pick_match(q, index.search(q, lang=lg, top_k=3), lg)
+        check(f"QA3(이전 사례) {q!r}: 완전 동점이던 질문은 그대로 {want}", pm is not None and pm.faq.id == want, pm and pm.faq.id)
+    was_ok37 = was_ok + ["K12", "Z03"]
+    check("evaluate 화면 기준: b3c34ce 에서 맞던 37문항은 그대로 맞고 화면 오답 0",
+          not [q for q in was_ok37 if not byq[q]["app_correct"]] and rep["app_correct"] >= 37 and rep["app_wrong"] == 0,
+          ([q for q in was_ok37 if not byq[q]["app_correct"]], rep["app_correct"], rep["app_wrong"]))
+    # 마크다운 특수 문자: Streamlit(GFM)은 '~' 한 개로도 취소선(9/1~9/28 → 1~9 에 줄), '$…$' 는 수식으로 그린다
+    smd, emd = linkify.safe_markdown, linkify.escape_markdown
+    check("safe_markdown: '9/1~9/28' 의 '~' 를 '\\~' 로(취소선 방지)", smd("9/1~9/28") == "9/1\\~9/28", smd("9/1~9/28"))
+    check("safe_markdown: '$5 ~ $6' 의 '$' 를 이스케이프(수식 방지)", smd("$5 ~ $6") == "\\$5 \\~ \\$6", smd("$5 ~ $6"))
+    check("safe_markdown: '*'·'_'·'<남>'·'|'·'#' 도 글자 그대로", smd("a*b*_c_ <남> x|y #1") == "a\\*b\\*\\_c\\_ \\<남\\> x\\|y \\#1", smd("a*b*_c_ <남> x|y #1"))
+    check("safe_markdown: 줄 맨 앞 '- '·'1. '·'> ' 가 목록·인용이 되지 않게", smd("- a\n2. b\n> c") == "\\- a\n2\\. b\n\\> c", smd("- a\n2. b\n> c"))
+    check("safe_markdown: 링크는 그대로 링크(주소 속 '~' 는 라벨만 이스케이프)",
+          smd("见 https://a.kr/~x?a=1 ~") == "见 [https://a.kr/\\~x?a=1](<https://a.kr/~x?a=1>) \\~", smd("见 https://a.kr/~x?a=1 ~"))
+    check("safe_markdown(ai): AI 답의 굵게·목록은 살리고 '~'·'$' 만 이스케이프",
+          smd("**3~5天**\n- $5", "ai") == "**3\\~5天**\n- \\$5", smd("**3~5天**\n- $5", "ai"))
+    check("safe_markdown(ui): 화면 문구는 링크만(굵게 등 그대로)", smd("**x** www.a.kr", "ui") == sl("**x** www.a.kr"))
+    check("escape_markdown: 버튼 라벨·후보 질문용(None·빈 글 그대로)", emd("1~2") == "1\\~2" and emd("") == "" and emd(None) is None)
+    bad_md, unesc_bad, chunk_bad, tilde_ids = [], [], [], set()
+    for f in faqs:
+        for fld in (f.answer, f.answer_zh, f.source, f.checked_at):
+            if not fld:
+                continue
+            out = smd(fld)
+            if "~" in fld:
+                tilde_ids.add(f.id)
+            plain = re.sub(r"\[(?:\\.|[^\[\]\\])*\]\(<[^>]*>\)", "", out)
+            if re.search(r"(?<!\\)[~$*_<>|#`]", plain):
+                bad_md.append((f.id, plain[:50]))
+            back = re.sub(r"\[((?:\\.|[^\[\]\\])*)\]\(<[^>]*>\)", lambda m: m.group(1), out)
+            if re.sub(r"\\(.)", r"\1", back) != fld:
+                unesc_bad.append(f.id)
+            ch = linkify.typing_chunks(out)
+            if "".join(ch) != out or any(c.endswith("\\") and not c.endswith("\\\\") for c in ch):
+                chunk_bad.append(f.id)
+    check("'~' 가 든 FAQ(F08·F20·F24·F26·F31·F32·F39·초안 F12)를 모두 점검했다",
+          {"F08", "F20", "F24", "F26", "F31", "F32", "F39"} <= tilde_ids, sorted(tilde_ids))
+    check("모든 FAQ 답변·출처: 링크 밖에 이스케이프 안 된 '~ $ * _ < > | # `' 이 없다", not bad_md, bad_md[:3])
+    check("모든 FAQ 답변·출처: 이스케이프를 풀면 faq.csv 원문 그대로(글자 손실 없음)", not unesc_bad, unesc_bad[:5])
+    check("타자 효과: '\\~' 같은 이스케이프를 두 조각으로 쪼개지 않는다(모든 FAQ 답변)", not chunk_bad, chunk_bad[:5])
+    f31 = next(f for f in faqs if f.id == "F31")
+    check("F31 답변: '9/1~9/28' 이 '9/1\\~9/28' 로(취소선 없음), 이어 붙인 타자 조각도 같다",
+          "9/1\\~9/28" in smd(f31.answer_zh) and "".join(linkify.typing_chunks(smd(f31.answer_zh))) == smd(f31.answer_zh))
+    app_src4 = Path("app.py").read_text(encoding="utf-8")
+    check("app.py: FAQ 답은 data, AI 답은 ai 모드로 say 를 부른다", 'say(reply, stream, "data")' in app_src4 and 'say(entry["text"], stream, "ai")' in app_src4)
+    check("app.py: 출처·확인일·후보 질문·제안 버튼 라벨·사용자 말풍선이 이스케이프를 거친다",
+          "safe_markdown(faq.source)" in app_src4 and "safe_markdown(faq.checked_at)" in app_src4
+          and "escape_markdown(question)" in app_src4 and "st.button(escape_markdown(text)" in app_src4
+          and 'st.markdown(safe_markdown(entry["text"]))' in app_src4 and "st.markdown(safe_markdown(prompt))" in app_src4)
+    check("app.py: 제안 버튼을 누르면 보내는 질문은 원문(이스케이프 전)", "st.session_state.pending_prompt = text" in app_src4)
 finally:
     la._get, la._http_post, la._now, la.LOG_PATH = _saved
     la.reset_state()

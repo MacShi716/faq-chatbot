@@ -117,6 +117,7 @@ class Match:
     score: float  # 화면에 보이는 문자열 유사도(태그 적중이면 0.7 이상)
     method: str
     content: float = 0.0  # 흔한 의문 표현을 뺀 알맹이 유사도(content_score, 순위용)
+    tag_hits: int = 0  # 질문에 통째로 들어 있는 키워드 태그 수(박빙 판단용)
 
     @property
     def rank_score(self) -> float:
@@ -136,6 +137,16 @@ _GENERIC_WORDS = (
     "어떻게", "언제", "뭐예요", "뭐에요", "무엇", "어디", "얼마", "해요", "하나요", "있나요", "인가요", "알려주세요", "알려줘",
     "가능한가요", "되나요", "돼요", "요", "까", "나", "가", "은", "는", "이", "를", "을", "에", "도", "좀", "몇",
 )
+# --- 박빙(near tie) 순위 정리 (QA AC-1 3차, 2026-10-29) ---------------------------------------------------------
+# 문제: "住宿舍要多少钱"(기숙사비 일반 질문) 에서 F32(방학 중 기숙사 요금) 가 F07(기숙사 일반·관리비) 를 0.006 차로 이겼다.
+#       F32 는 표현 "放假期间住宿舍多少钱" 과 글자가 조금 더 겹쳤을 뿐(질문에 없는 '放假期间' 이 핵심), F07 은 태그 '宿舍' 가 그대로 들어 있다.
+# 수정: 1위와 순위 점수 차가 NEAR_TIE_MARGIN 미만인 후보끼리는 점수 차를 잡음으로 보고, 태그 적중 수가 더 많은 쪽을
+#       위로 올린다(태그 수가 같으면 원래 순위 그대로). FAQ 질문과 똑같은 질문(유사도 1.0)이 끼어 있으면 그대로 둔다.
+#       (대표 질문 길이로는 다시 고르지 않는다: "一汉马馆在哪" 가 제1한마생활관(F71) 대신 한마관(F66)으로 가는 등 더 나빠졌다.)
+# 0.02: 평가셋·FAQ 자기 질문에서 0 보다 크고 가장 작은 1·2위 차가 0.041(K17) 이다. 0.03 이면 FAQ 표현을 조금 줄인
+#       질문("一汉马馆在哪"·"1한마관 얼마예요", 차 0.026~0.028)에서 더 구체적인 FAQ 가 밀려나 0.02 로 잡았다.
+NEAR_TIE_MARGIN = 0.02
+
 # 순위용 알맹이에는 위치를 묻는 말을 남긴다: "图书馆在哪"(지도 F62) 와 "图书馆怎么使用"(이용 안내 F26) 를 가르는 말이라서.
 _PLACE_WORDS = ("哪里", "在哪")
 
@@ -168,6 +179,22 @@ def content_score(query: str, faq: "Faq", lang: str, for_rank: bool = False) -> 
         if t:
             best = max(best, difflib.SequenceMatcher(None, q, t).ratio())
     return best
+
+
+def _settle_near_tie(rows: list) -> list:
+    """1위와 순위 점수 차가 NEAR_TIE_MARGIN 미만인 후보들 안에서 태그 적중 수가 많은 쪽을 위로 올린다(같으면 원래 순서).
+
+    rows: (faq, score, content, tag_hits) 를 순위대로 정렬한 목록. 박빙 묶음 밖의 순서는 그대로다.
+    박빙 묶음에 FAQ 질문과 똑같은 질문(score 1.0)이 있으면 바꾸지 않는다(정확한 일치는 밀어내지 않는다).
+    """
+    if len(rows) < 2:
+        return rows
+    lead = rows[0][1] + rows[0][2]
+    group = [r for r in rows if lead - (r[1] + r[2]) < NEAR_TIE_MARGIN]
+    if len(group) < 2 or any(r[1] >= 1.0 for r in group):
+        return rows
+    group.sort(key=lambda r: -r[3])  # 안정 정렬: 태그 수가 같으면 원래 순위(점수 → 태그 → 짧은 질문 → id)를 지킨다
+    return group + rows[len(group):]
 
 
 @dataclass
@@ -246,9 +273,11 @@ class Retriever:
                 score = max(score, TAG_HIT_SCORE)
             adjusted.append((faq, score, content_score(query, faq, lang, for_rank=True), hits))
 
-        # 순위: ① 문자열 유사도 + 알맹이 유사도 합(높은 순) ② 태그 적중 수 ③ 대표 질문이 짧은 쪽(더 구체적) ④ id
+        # 순위: ① 문자열 유사도 + 알맹이 유사도 합(높은 순) ② 태그 적중 수 ③ 대표 질문이 짧은 쪽(더 일반적인 FAQ) ④ id
         adjusted.sort(key=lambda row: (-(row[1] + row[2]), -row[3], len(normalize(row[0].question_ko)), row[0].id))
-        return [Match(faq=faq, score=score, method=self.method, content=content) for faq, score, content, _ in adjusted[:top_k]]
+        adjusted = _settle_near_tie(adjusted)
+        return [Match(faq=faq, score=score, method=self.method, content=content, tag_hits=hits)
+                for faq, score, content, hits in adjusted[:top_k]]
 
     def answer(self, query: str, lang: str | None = None) -> Match | None:
         """임계값을 넘는 최상위 1건을 반환한다. 없으면 None(= 사무실 문의 안내)."""

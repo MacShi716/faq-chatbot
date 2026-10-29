@@ -486,6 +486,66 @@ try:
     text = all_text(ad)
     check("숨긴 미작성 초안(F10 자기 질문): 답 없음 안내에 '유사도 1.00' 이 나오지 않는다",
           not ad.exception and "죄송합니다" in text and "유사도 1.00" not in text and "· FAQ F10" not in text, ad.exception or text[-300:])
+    print("[14] QA 인수 테스트 AC-1 3차: '住宿舍要多少钱' 은 F32 가 아님 · '~'/'$' 가 취소선·수식이 되지 않는다")
+    for ai_on, cfg in ((False, {}), (True, ON)):
+        install(cfg)
+        aq = new_app(ai=ai_on)
+        aq.get("segmented_control")[0].set_value("zh")
+        aq.run()
+        aq.chat_input[0].set_value("住宿舍要多少钱").run()
+        text = all_text(aq)
+        tag = "AI 켜짐" if ai_on else "AI 꺼짐"
+        shown_ids = set(re.findall(r"· FAQ (F\d+) ·", text))
+        no_answer = "抱歉，没有找到匹配的回答" in text or LABEL_ZH in text or "FAQ里还没有" in text
+        check(f"QA3({tag}) '住宿舍要多少钱': F07 답(AI 호출 없음)이거나 답 없음, F32(방학 중 요금) 답 아님",
+              not aq.exception and "F32" not in shown_ids and shown_ids <= {"F07"}
+              and ((shown_ids == {"F07"} and not CALLS) or (not shown_ids and no_answer)), aq.exception or (shown_ids, len(CALLS), text[-300:]))
+    # '~' 가 든 FAQ 답(F08·F20·F24·F26·F31·F32·F39): 화면 마크다운 문자열에 '\~' 로 들어가 취소선이 되지 않는다
+    import csv
+    from normalize import split_variants
+
+    rows = {r["id"]: r for r in csv.DictReader(open("data/faq.csv", encoding="utf-8-sig"))}
+    unesc = re.compile(r"(?<!\\)[~$]")
+
+    def strip_links(s):
+        return re.sub(r"\[(?:\\.|[^\[\]\\])*\]\(<[^>]*>\)", "", s)
+
+    for fid in ("F08", "F20", "F24", "F26", "F31", "F32", "F39"):
+        for lg in ("ko", "zh"):
+            install({})
+            aq = new_app(ai=False)
+            if lg == "zh":
+                aq.get("segmented_control")[0].set_value("zh")
+                aq.run()
+            q = split_variants(rows[fid]["question_" + lg])[0]
+            aq.chat_input[0].set_value(q).run()
+            md = [m.value for m in aq.markdown] + [c.value for c in aq.caption]
+            ans = [s for s in md if "\\~" in s]
+            check(f"'~' 이스케이프({fid}, {lg}) {q!r}: FAQ {fid} 답의 '~' 가 '\\~' 로, 이스케이프 안 된 '~'·'$' 없음",
+                  not aq.exception and f"· FAQ {fid} ·" in "\n".join(md) and ans and not [s for s in md if unesc.search(strip_links(s))],
+                  aq.exception or [s[:80] for s in md if unesc.search(strip_links(s))][:2] or "\\~ 없음")
+    install({})
+    aq = new_app(ai=False)
+    aq.get("segmented_control")[0].set_value("zh")
+    aq.run()
+    aq.chat_input[0].set_value("宿舍中途入住怎么办理？").run()
+    check("F31(zh) 답: '9/1\\~9/28' 그대로(취소선 없이 9/1~9/28 로 보인다)",
+          not aq.exception and any("9/1\\~9/28" in m.value for m in aq.markdown), aq.exception or [m.value[:80] for m in aq.markdown][-2:])
+    # 사용자 말풍선 · AI 답변의 '~'/'$'
+    install({})
+    aq = new_app(ai=False)
+    aq.chat_input[0].set_value("9/1~9/28 기숙사비 $5 ~ $6 맞아요?").run()
+    check("사용자 말풍선: '~'·'$' 이스케이프(원문 글자 그대로 보인다)",
+          not aq.exception and any("9/1\\~9/28 기숙사비 \\$5 \\~ \\$6 맞아요?" == m.value for m in aq.markdown), aq.exception or [m.value[:60] for m in aq.markdown][:4])
+    MOCK_BAK = MOCK_TEXT
+    MOCK_TEXT = "**계좌 개설**은 3~5일 걸리고 수수료는 $5 정도예요.\n- 여권 지참"
+    install(ON)
+    aq = new_app()
+    aq.chat_input[0].set_value("한국에서 은행 계좌 만드는 방법 알려줘").run()
+    text = all_text(aq)
+    MOCK_TEXT = MOCK_BAK
+    check("AI 답변: '~'·'$' 만 이스케이프하고 굵게·목록 마크다운은 그대로",
+          not aq.exception and "**계좌 개설**은 3\\~5일 걸리고 수수료는 \\$5 정도예요.\n- 여권 지참" in text and len(CALLS) == 1, aq.exception or text[-300:])
 finally:
     la._get, la._http_post, la.LOG_PATH = _saved
     la.reset_state()
