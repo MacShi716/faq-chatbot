@@ -40,9 +40,6 @@ streamlit run app.py
 화면 오른쪽 위의 `한국어 | 中文` 버튼으로 UI 언어를 바꾼다. 질문 언어는 버튼과 무관하게
 자동으로 판별된다(한국어로 물으면 한국어 FAQ, 中文으로 물으면 中文 FAQ 와 매칭).
 
-> 답변 본문은 아직 한국어 데이터만 있다. 화면 문구만 번역되고 답변은 한국어로 나온다.
-> 대응하려면 `faq.csv` 에 `answer_zh` 컬럼을 추가해야 한다(2주차 논의 안건).
-
 ### AI 자율 답변 켜기 (선택, PowerShell)
 
 기본값은 꺼짐이라 아무것도 설정하지 않으면 지금까지와 똑같이(FAQ 답변 또는 "찾지 못했습니다") 동작한다.
@@ -82,7 +79,7 @@ AI 기능은 **서버 설정**과 **사용자 선택** 두 단계로 켜진다.
 AI 답변 동작(2026-10-29 개선):
 - 시스템 프롬프트에 **오늘 날짜(Asia/Seoul)** 와 설정된 **모델 ID** 가 들어간다. 날씨·뉴스 같은 실시간 정보는 모른다고 답하고, 학교 정보는 지어내지 않으며, 질문한 언어로 완결된 문장으로 답한다. `max_tokens` 는 1000 이다.
 - 날짜가 답에 들어갈 수 있어 캐시는 날짜별로 나뉜다.
-- AI 대화가 켜져 있으면, FAQ 와 "무엇인가요/어떻게 해요" 같은 흔한 의문 표현만 겹치는 우연한 일치(예: "你是什么模型" → F23)는 매칭으로 보지 않고 AI 로 보낸다. 토글이 꺼져 있으면 이 판단은 쓰지 않아 예전 동작과 평가 점수(`evaluate.py`)가 그대로다.
+- AI 대화가 켜져 있으면, FAQ 와 "무엇인가요/어떻게 해요" 같은 흔한 의문 표현만 겹치는 우연한 일치(예: "你是什么模型" → F23)는 매칭으로 보지 않고 AI 로 보낸다.
 - 화면에 그릴 때 글 속 URL 을 `[주소](<주소>)` 형태의 명시적 링크로 바꾼다(`linkify.py`). 전각 쉼표·괄호·한자가 URL 바로 뒤에 붙어도 링크가 깨지지 않는다. `faq.csv` 는 고치지 않아도 된다.
 
 무료(Workers Free)로 쓸 수 있는 모델 비교(2026-10-29, 질문 6~12개 실측, 호출당 뉴런은 평균):
@@ -101,25 +98,40 @@ Kimi·GLM-5.x·DeepSeek-V4 계열은 Workers Free 에서 "not available on the W
 
 ```
 faq-chatbot/
-├─ app.py            # Streamlit 채팅 화면
-├─ i18n.py           # 화면 문구 사전 (한국어 / 中文) + 우측 상단 언어 전환
-├─ retriever.py      # 검색 엔진 (difflib / TF-IDF)
-├─ llm_answer.py     # Tier B: FAQ 에 없는 질문에 AI 자율 답변 (기본 꺼짐, 표준 라이브러리만 사용)
-├─ normalize.py      # 언어 감지 + 문자열 정규화
-├─ linkify.py        # 화면에 그릴 때 글 속 URL 을 안전한 링크로 바꿈(전각 부호·한자와 붙어도 안 깨짐)
-├─ evaluate.py       # 50문항 정확도 측정 + 결과 보고서 생성
-├─ tune.py           # 임계값 민감도 실험 (0.3 ~ 0.6)
-├─ validate_data.py  # faq.csv 품질 점검 (ERROR / WARN)
-├─ selftest.py       # 의존성 없는 자체 점검
-├─ smoke_ui.py       # 화면 동작 스모크 테스트 (Streamlit AppTest)
+├─ README.md
+├─ app.py                 # Streamlit 채팅 화면
+├─ chat_logic.py          # 대화 의도·FAQ 매칭·AI 분기
+├─ i18n.py                # 화면 문구 사전 (한국어 / 中文) + 우측 상단 언어 전환
+├─ retriever.py           # 검색 엔진 (difflib / TF-IDF)
+├─ llm_answer.py          # Tier B: FAQ 에 없는 질문에 AI 자율 답변 (기본 꺼짐, 표준 라이브러리만 사용)
+├─ normalize.py           # 언어 감지 + 문자열 정규화
+├─ linkify.py             # 화면에 그릴 때 글 속 URL 을 안전한 링크로 바꿈(전각 부호·한자와 붙어도 안 깨짐)
+├─ evaluate.py            # 50문항 정확도 측정 + 결과 보고서 생성
+├─ tune.py                # 임계값 민감도 실험 (0.3 ~ 0.6)
+├─ validate_data.py       # faq.csv 품질 점검 (ERROR / WARN)
+├─ selftest.py            # 의존성 없는 자체 점검
+├─ smoke_ui.py            # 화면 동작 스모크 테스트 (Streamlit AppTest)
+├─ demo.py                # 터미널에서 검색 결과 확인 (기본 8문항)
+├─ screenshot_check.py    # 브라우저로 화면 문구·스크린샷 확인
+├─ styles.css             # 채팅 화면 스타일
+├─ requirements.txt
+├─ .env.example           # 환경변수 이름 견본
+├─ .gitignore
+├─ .github/
+│  └─ workflows/
+│     └─ ci.yml           # push·PR 시 selftest·smoke_ui·validate_data·evaluate
+├─ .streamlit/
+│  └─ config.toml         # 테마, 사용 통계 끄기
 ├─ data/
-│  ├─ faq.csv        # question_ko, question_zh, answer, source, checked_at
-│  └─ eval.csv       # 평가 문항 50개 (한국어 25 / 중국어 25)
-├─ docs/
-│  ├─ 실행계획.md      # 주차별 일정
-│  ├─ 데이터수집_가이드.md
-│  └─ 회의록.md
-└─ requirements.txt
+│  ├─ faq.csv             # id, question_ko, question_zh, answer, answer_zh, source, checked_at, category, tags
+│  └─ eval.csv            # 평가 문항 50개 (한국어 25 / 중국어 25)
+└─ docs/
+   ├─ 실행계획.md          # 주차별 일정
+   ├─ 데이터수집_가이드.md
+   ├─ 데이터수집_양식.csv
+   ├─ 작업지시서.md
+   ├─ 진행상황.md
+   └─ 회의록.md
 ```
 
 ## 3. 데이터 규칙 (가장 중요)
