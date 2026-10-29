@@ -12,7 +12,7 @@ import re
 
 from llm_answer import free_answer
 from normalize import detect_lang, normalize
-from retriever import DEFAULT_THRESHOLD, NEAR_TIE_MARGIN, _GENERIC_RE, _GENERIC_WORDS, _core, content_score, is_filled  # noqa: F401 (다른 모듈·테스트가 여기서 가져다 쓴다)
+from retriever import DEFAULT_THRESHOLD, NEAR_TIE_MARGIN, _GENERIC_RE, _GENERIC_WORDS, content_score, is_filled
 
 # "혹시 이런 질문인가요?" 후보로 보여줄 최소 유사도(너무 동떨어진 후보는 숨긴다).
 SUGGEST_MIN_SCORE = 0.2
@@ -40,16 +40,6 @@ MIN_CONTENT_SCORE = 0.60
 # AMBIGUOUS_MARGIN 0.10: 내부 평가셋에서 맞는 매칭 중 '박빙 + 낱말 빠짐'은 없었고, 가장 가까운 맞는 매칭은 0.14(K06) 차이였다.
 AMBIGUOUS_MARGIN = 0.10
 
-# --- '박빙 1위' 가드 (QA AC-1 3차, 2026-10-29) ------------------------------------------------------------------------
-# 문제: "住宿舍要多少钱" 에서 F32(방학 중 요금) 0.706 vs F07(기숙사 일반) 0.700. 핵심 낱말('宿舍')은 둘 다에 있어
-#       위 '애매한 1위' 가드가 걸리지 않았다.
-# 해결: ① 검색 순위(retriever._settle_near_tie): 순위 점수 차가 NEAR_TIE_MARGIN(0.02) 미만이면 태그 적중이 더 많은 쪽이 1위
-#          → "住宿舍要多少钱" 은 태그 '宿舍' 가 든 F07 이 1위(F32 는 태그 적중 0, 질문에 없는 '放假期间' 표현과 글자만 겹침).
-#       ② 이 가드: 그래도 1위와 차가 0 보다 크고 NEAR_TIE_MARGIN 미만인 상대가 있는데 1위의 태그 적중이 그 상대보다
-#          많지 않으면(= 몇 글자 차이의 잡음이 1위를 정함) 핵심 낱말과 상관없이 답하지 않는다(답 없음 + 후보 제안 / AI 켜짐이면 Tier B).
-#       완전 동점(차 0)은 예전 규칙(태그 적중 → 더 일반적인(짧은) 대표 질문)을 그대로 쓴다:
-#       K13 "생활관 들어가려면"(F07 vs F32)·Z06 "毕业条件是什么"(F03 vs F21)·Z04 "复学申请流程"(F02 vs F38) 은 맞게 답한다.
-
 # 핵심 낱말을 뽑을 때 떼어 내는 한국어 조사·어미(띄어쓰기 단위 끝에서만 뗀다)와, 핵심 낱말로 보지 않는 말.
 _KO_ENDINGS = tuple(sorted({
     "으려면", "하려면", "려면", "이에요", "예요", "에요", "인가요", "하나요", "해요", "해야", "하고", "하는", "하면", "싶어요", "싶어",
@@ -69,7 +59,7 @@ def _strip_ko(token: str) -> str:
     return "" if token in _NOT_KEY or token in _KO_ENDINGS else token
 
 
-def key_words(query: str, lang: str) -> list[str]:
+def key_words(query: str) -> list[str]:
     """질문의 핵심 낱말(2글자 이상).
 
     한국어: 띄어쓰기 단위마다 끝의 조사·어미를 뗀 것 (예: "기준이" → "기준", "들어가려면" → "들어").
@@ -86,7 +76,7 @@ def key_words(query: str, lang: str) -> list[str]:
 def missing_key_words(query: str, faq, lang: str) -> list[str]:
     """FAQ 질문·표현·태그 어디에도 나오지 않는 핵심 낱말. 낱말의 2글자 조각 하나라도 나오면 들어 있는 것으로 본다."""
     text = "|".join(normalize(t) for t in faq.search_terms(lang))
-    return [w for w in key_words(query, lang) if not any(w[i:i + 2] in text for i in range(len(w) - 1))]
+    return [w for w in key_words(query) if not any(w[i:i + 2] in text for i in range(len(w) - 1))]
 
 
 def is_ambiguous(query: str, top: list, lang: str) -> bool:

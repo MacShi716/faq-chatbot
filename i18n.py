@@ -7,7 +7,6 @@
 
 STRINGS = {
     "ko": {
-        "page_title": "학과 교무·생활 Q&A 챗봇",
         "lang_label": "언어",
         "title": "학과 교무·생활 Q&A 챗봇",
         "disclaimer": "※ 답변이 정확하지 않을 수 있습니다. 중요한 내용은 학과 사무실에 확인하세요.",
@@ -56,7 +55,6 @@ STRINGS = {
         "footer": "데이터 담당: FAQ 의 answer/source/checked_at 를 실제 확인 내용으로 채운 뒤 사용하세요.",
     },
     "zh": {
-        "page_title": "院系教务与生活问答机器人",
         "lang_label": "语言",
         "title": "院系教务与生活问答机器人",
         "disclaimer": "※ 回答可能不准确。重要事项请务必向系办公室确认。",

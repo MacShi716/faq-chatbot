@@ -707,11 +707,11 @@ try:
 
     check("애매한 1위 가드 기준값(순위 점수 차 0.10)", AMBIGUOUS_MARGIN == 0.10)
     check("key_words: 한국어는 조사·어미를 떼고 중국어는 흔한 의문 표현으로 나눈다",
-          key_words("성적 장학금 기준이 뭐예요", "ko") == ["성적", "장학금", "기준"]
-          and key_words("외국인등록증 갱신 어떻게 해요", "ko") == ["외국인등록증", "갱신"]
-          and key_words("생활관 들어가려면 어떻게 해요", "ko") == ["생활관", "들어"]
-          and key_words("什么时候可以复学", "zh") == ["复学"],
-          (key_words("성적 장학금 기준이 뭐예요", "ko"), key_words("생활관 들어가려면 어떻게 해요", "ko"), key_words("什么时候可以复学", "zh")))
+          key_words("성적 장학금 기준이 뭐예요") == ["성적", "장학금", "기준"]
+          and key_words("외국인등록증 갱신 어떻게 해요") == ["외국인등록증", "갱신"]
+          and key_words("생활관 들어가려면 어떻게 해요") == ["생활관", "들어"]
+          and key_words("什么时候可以复学") == ["复学"],
+          (key_words("성적 장학금 기준이 뭐예요"), key_words("생활관 들어가려면 어떻게 해요"), key_words("什么时候可以复学")))
     t03 = index.search("什么时候可以复学", lang="zh", top_k=3)
     check("순위: '什么时候可以复学' 1위는 F02(复学), F01(休学)이 아니다(문자열 0.78 < 0.70 이어도 알맹이 '复学' 1.0)",
           t03[0].faq.id == "F02" and t03[0].rank_score > t03[1].rank_score, [(m.faq.id, round(m.score, 2), round(m.content, 2)) for m in t03])
