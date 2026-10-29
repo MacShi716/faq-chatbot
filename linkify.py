@@ -48,20 +48,20 @@ def _split_trailing(url: str) -> tuple[str, str]:
     return url, tail
 
 
+def _to_md_link(m: re.Match) -> str:
+    """URL 매치를 [표시](<주소>) 로 바꾸거나, 건너뛰면 원래 글자를 돌려준다."""
+    url, tail = _split_trailing(m.group(0))
+    if not url or url.lower() in ("http://", "https://", "www."):
+        return m.group(0)
+    href = url if url.lower().startswith("http") else "https://" + url
+    return f"[{_MD_ESCAPE.sub(r'\\\1', url)}](<{href}>){tail}"
+
+
 def safe_links(text: str) -> str:
     """맨 URL 을 [표시](<주소>) 로 바꾼다. 이미 마크다운 링크이거나 <주소> 안에 있는 것은 그대로 둔다."""
     if not text or ("http" not in text.lower() and "www." not in text.lower()):
         return text
-
-    def repl(m: re.Match) -> str:
-        url, tail = _split_trailing(m.group(0))
-        if not url or url.lower() in ("http://", "https://", "www."):
-            return m.group(0)
-        href = url if url.lower().startswith("http") else "https://" + url
-        label = _MD_ESCAPE.sub(r"\\\1", url)
-        return f"[{label}](<{href}>){tail}"
-
-    return _URL.sub(repl, text)
+    return _URL.sub(_to_md_link, text)
 
 
 def _escape_line_start(m: re.Match) -> str:
@@ -86,7 +86,7 @@ def escape_markdown(text: str, mode: str = "data", line_start: bool = True) -> s
 
 
 def safe_markdown(text: str, mode: str = "data") -> str:
-    """화면에 그릴 글: URL 은 [표시](<주소>) 링크로(safe_links 와 같은 규칙), 나머지 글은 escape_markdown(mode).
+    """화면에 그릴 글: URL 은 [표시](<주소>) 링크로, 나머지 글은 escape_markdown(mode).
 
     mode "ui" 는 화면 문구(i18n, 일부러 쓴 마크다운 포함)라 링크만 바꾼다(= safe_links).
     """
@@ -94,13 +94,12 @@ def safe_markdown(text: str, mode: str = "data") -> str:
         return safe_links(text)
     out, pos = [], 0
     for m in _URL.finditer(text):
-        url, _tail = _split_trailing(m.group(0))
-        if not url or url.lower() in ("http://", "https://", "www."):
+        linked = _to_md_link(m)
+        if linked == m.group(0):
             continue
-        href = url if url.lower().startswith("http") else "https://" + url
-        label = _MD_ESCAPE.sub(r"\\\1", url)
-        out += [escape_markdown(text[pos : m.start()], mode, line_start=pos == 0), f"[{label}](<{href}>)"]
-        pos = m.start() + len(url)  # 뗀 문장부호(_tail)는 다음 글과 함께 이스케이프한다
+        tail = _split_trailing(m.group(0))[1]
+        out += [escape_markdown(text[pos : m.start()], mode, line_start=pos == 0), linked[: len(linked) - len(tail)]]
+        pos = m.end() - len(tail)  # 뗀 문장부호는 다음 글과 함께 이스케이프한다
     out.append(escape_markdown(text[pos:], mode, line_start=pos == 0))
     return "".join(out)
 
