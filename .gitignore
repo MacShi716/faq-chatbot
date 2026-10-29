@@ -24,7 +24,6 @@ Thumbs.db
 *.doc
 *.pdf
 
-# faq_sync.py backup
 *.bak
 
 # Streamlit 비밀 파일 (API 키)
