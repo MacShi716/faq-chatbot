@@ -54,7 +54,8 @@ def _to_md_link(m: re.Match) -> str:
     if not url or url.lower() in ("http://", "https://", "www."):
         return m.group(0)
     href = url if url.lower().startswith("http") else "https://" + url
-    return f"[{_MD_ESCAPE.sub(r'\\\1', url)}](<{href}>){tail}"
+    label = _MD_ESCAPE.sub(r"\\\1", url)
+    return f"[{label}](<{href}>){tail}"
 
 
 def safe_links(text: str) -> str:
