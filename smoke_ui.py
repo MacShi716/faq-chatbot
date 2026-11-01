@@ -131,8 +131,41 @@ for q, expect_badge, label in [
     text = all_text(at7)
     check(label + (" → 배지 있음" if expect_badge else " → 배지 없음"), (UNV in text) == expect_badge, text[-300:])
 
-at7 = AppTest.from_file("app.py", default_timeout=60)
-at7.run()
+_DRAFT_DIRS = []  # app_with_draft_f10 이 만든 임시 폴더(스크립트 끝에서 지운다)
+
+
+def app_with_draft_f10():
+    """F10 답변만 [작성 필요] 로 되돌린 임시 faq.csv 로 앱을 띄운다.
+
+    2026-11-01 에 FAQ 85행이 모두 채워져 실데이터에는 미작성 초안이 없다. 그래도 '미작성 초안은 답하지
+    않는다'는 화면 동작을 계속 검증하려고, F10 한 행만 초안으로 바꾼 파일을 사이드바 'FAQ 파일'에 넣는다.
+    돌려주는 임시 폴더는 호출한 쪽에서 계속 들고 있어야 한다(지우면 앱이 파일을 못 읽는다).
+    """
+    import csv as _csv
+    import tempfile as _tf
+    from pathlib import Path as _P
+
+    tmp = _tf.mkdtemp(prefix="faq_draft_")
+    rows = list(_csv.DictReader(open("data/faq.csv", encoding="utf-8-sig")))
+    cols = list(rows[0].keys())
+    for r in rows:
+        if r["id"] == "F10":
+            r["answer"] = "[작성 필요] 학과 사무실 위치·연락처는 학과마다 달라 확인하지 못했습니다."
+            r["answer_zh"] = "[待填写] 系办公室的位置和联系方式因院系而异，未能确认。"
+            r["checked_at"] = ""
+    dst = _P(tmp) / "faq_draft.csv"
+    with open(dst, "w", encoding="utf-8", newline="") as f:
+        w = _csv.DictWriter(f, fieldnames=cols, lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
+    a = AppTest.from_file("app.py", default_timeout=60)
+    a.run()
+    a.text_input[0].set_value(str(dst)).run()
+    _DRAFT_DIRS.append(tmp)
+    return a, tmp
+
+
+at7, _tmp_draft = app_with_draft_f10()
 at7.chat_input[0].set_value("학과 사무실은 어디에 있어요?").run()
 text = all_text(at7)
 check("F10 미작성 초안([작성 필요]) → 답 없음 안내, 초안 문구·FAQ id 없음",
@@ -481,7 +514,7 @@ try:
             check(f"QA2({tag}) {q!r}: 맞는 FAQ({right}) 답이거나 답 없음/Tier B, 다른 FAQ 출처 줄 없음",
                   not aq.exception and shown_ids <= {right} and (shown_ids == {right} or no_answer), aq.exception or (shown_ids, text[-300:]))
     install({})
-    ad = new_app(ai=False)
+    ad, _tmp_draft2 = app_with_draft_f10()
     ad.chat_input[0].set_value("학과 사무실은 어디에 있어요?").run()
     text = all_text(ad)
     check("숨긴 미작성 초안(F10 자기 질문): 답 없음 안내에 '유사도 1.00' 이 나오지 않는다",
@@ -550,6 +583,8 @@ finally:
     la._get, la._http_post, la.LOG_PATH = _saved
     la.reset_state()
     shutil.rmtree(_tmp, ignore_errors=True)
+    for _d in _DRAFT_DIRS:  # app_with_draft_f10 이 만든 임시 faq.csv 폴더
+        shutil.rmtree(_d, ignore_errors=True)
 
 print()
 if FAILS:
