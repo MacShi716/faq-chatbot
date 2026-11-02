@@ -140,6 +140,7 @@ def main() -> int:
     parser.add_argument("--faq", type=Path, default=DEFAULT_FAQ_PATH)
     parser.add_argument("--eval", type=Path, default=DEFAULT_EVAL_PATH)
     parser.add_argument("--out", type=Path, default=Path(__file__).parent / "reports")
+    parser.add_argument("--min-accuracy", type=float, default=0.0, help="전체 정확도(%%)가 이보다 낮으면 종료 코드 1")
     args = parser.parse_args()
 
     report = run(args.method, args.threshold, args.faq, args.eval)
@@ -153,7 +154,7 @@ def main() -> int:
     print(f"화면 기준(약한 매칭 가드·애매한 1위 가드·미작성 초안 제외) {report['app_correct']}/{report['total']} = {report['app_accuracy']:.1f}%"
           f" · 화면 오답 {report['app_wrong']}건 · 답 없음 {report['app_none']}건")
     print(f"보고서: {path}")
-    return 0
+    return 0 if report["accuracy"] >= args.min_accuracy else 1
 
 
 if __name__ == "__main__":
