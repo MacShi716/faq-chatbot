@@ -47,7 +47,6 @@ class Faq:
     answer: str
     source: str
     checked_at: str
-    category: str = ""
     answer_zh: str = ""
     tags: str = ""
 
@@ -101,7 +100,6 @@ def load_faqs(path: Path | str = DEFAULT_FAQ_PATH) -> list[Faq]:
                 answer=(row.get("answer") or "").strip(),
                 source=(row.get("source") or "").strip(),
                 checked_at=(row.get("checked_at") or "").strip(),
-                category=(row.get("category") or "").strip(),
                 answer_zh=(row.get("answer_zh") or "").strip(),
                 tags=(row.get("tags") or "").strip(),
             )
