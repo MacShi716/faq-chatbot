@@ -3,7 +3,7 @@
 
 두 단계로 나눠서 본다.
   ERROR : 파일이 깨졌거나 검색이 불가능한 문제 (중복 id, 질문 없음, 컬럼 누락)
-  WARN  : 아직 데이터가 준비되지 않은 상태 (플레이스홀더 답변, 출처/확인일 없음, 태그 부족)
+  WARN  : 아직 데이터가 준비되지 않은 상태 (출처/확인일 없음, 태그 부족)
 
     python validate_data.py            # ERROR 만 실패 처리
     python validate_data.py --strict   # WARN 도 실패 처리 (데이터 완성 후 사용)
