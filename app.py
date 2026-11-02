@@ -79,6 +79,20 @@ except Exception:  # noqa: BLE001 - 번역 방지는 있으면 좋은 보조 기
 
 # 화면에는 프로젝트 기준 상대 경로만 보여준다(전체 경로가 노출되지 않도록).
 REL_FAQ_PATH = "data/faq.csv"
+DEFAULT_METHOD = "difflib"
+
+
+def _debug_mode() -> bool:
+    """디버그 모드: 환경 변수 FAQ_DEBUG=1 또는 secrets 의 debug=true 일 때만 켜진다(기본 꺼짐)."""
+    if os.environ.get("FAQ_DEBUG", "").strip().lower() in ("1", "true", "on", "yes"):
+        return True
+    try:
+        return str(st.secrets.get("debug", "")).strip().lower() in ("1", "true", "on", "yes")
+    except Exception:  # noqa: BLE001 - secrets.toml 이 없으면 꺼진 것으로 본다
+        return False
+
+
+DEBUG_MODE = _debug_mode()
 FAQ_DIR = DEFAULT_FAQ_PATH.parent.parent
 
 # 처음 화면에 보여주는 예시 질문(눌러서 바로 질문). 화면 언어에 맞춰 한 가지 언어로만 보여준다.
@@ -245,22 +259,28 @@ if "history" not in st.session_state:
 
 with st.sidebar:
     st.header(t("settings"))
-    method = st.radio(
-        t("search_method"),
-        options=["difflib", "tfidf"],
-        index=0,
-        captions=[t("method_difflib"), t("method_tfidf")],
-    )
+    if DEBUG_MODE:  # 검색 방법·FAQ 경로·임계값은 디버그 모드에서만 보이고, 평소에는 기본값을 그대로 쓴다
+        method = st.radio(
+            t("search_method"),
+            options=["difflib", "tfidf"],
+            index=0,
+            captions=[t("method_difflib"), t("method_tfidf")],
+        )
+    else:
+        method = DEFAULT_METHOD
     show_debug = st.checkbox(t("show_candidates"), value=False)
-    with st.expander(t("advanced")):
-        faq_path = st.text_input(t("faq_file"), value=REL_FAQ_PATH)
-        threshold = st.slider(t("threshold"), 0.1, 0.9, DEFAULT_THRESHOLD, 0.05)
+    if DEBUG_MODE:
+        with st.expander(t("advanced")):
+            faq_path = st.text_input(t("faq_file"), value=REL_FAQ_PATH)
+            threshold = st.slider(t("threshold"), 0.1, 0.9, DEFAULT_THRESHOLD, 0.05)
+    else:
+        faq_path, threshold = REL_FAQ_PATH, DEFAULT_THRESHOLD
 
     try:
         index = get_retriever(faq_path, method, threshold)
         st.success(t("loaded", n=len(index.faqs)))
-    except Exception as exc:  # 데이터 오류를 화면에서 바로 확인하기 위함
-        st.error(t("load_error", err=exc))
+    except Exception as exc:  # 디버그 모드에서만 원래 오류 문구를 보여 준다(평소에는 일반 안내만)
+        st.error(t("load_error", err=exc) if DEBUG_MODE else t("load_error_generic"))
         st.stop()
 
     if st.button(t("clear"), use_container_width=True):

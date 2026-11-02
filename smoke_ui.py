@@ -5,7 +5,11 @@ Streamlit 공식 테스트 하네스(AppTest)로 app.py 를 그대로 실행한�
     python smoke_ui.py
 """
 
+import os
 import sys
+
+# 기존 검사는 사이드바 고급 설정(검색 방법·FAQ 경로·임계값)을 쓰므로 디버그 모드로 실행한다.
+os.environ["FAQ_DEBUG"] = "1"
 
 from streamlit.testing.v1 import AppTest
 
@@ -585,6 +589,21 @@ finally:
     shutil.rmtree(_tmp, ignore_errors=True)
     for _d in _DRAFT_DIRS:  # app_with_draft_f10 이 만든 임시 faq.csv 폴더
         shutil.rmtree(_d, ignore_errors=True)
+
+print("[D] 디버그 모드 꺼짐(기본): 고급 설정 숨김, 기본값 사용")
+os.environ.pop("FAQ_DEBUG", None)
+try:
+    ad = AppTest.from_file("app.py", default_timeout=60)
+    ad.run()
+    check("디버그 꺼짐: 예외 없음", not ad.exception, ad.exception)
+    check("디버그 꺼짐: 검색 방법·FAQ 경로·임계값 위젯 없음",
+          len(ad.radio) == 0 and len(ad.text_input) == 0 and len(ad.slider) == 0 and len(ad.expander) == 0,
+          [len(ad.radio), len(ad.text_input), len(ad.slider)])
+    check("디버그 꺼짐: AI 토글은 그대로(기본 꺼짐)", len(ad.toggle) == 1 and ad.toggle[0].value is False)
+    ad.chat_input[0].set_value("휴학 신청은 언제 해요?").run()
+    check("디버그 꺼짐: 기본값(difflib·data/faq.csv)으로 FAQ 답변", not ad.exception and "죄송합니다" not in all_text(ad), ad.exception or all_text(ad)[-200:])
+finally:
+    os.environ["FAQ_DEBUG"] = "1"
 
 print()
 if FAILS:
