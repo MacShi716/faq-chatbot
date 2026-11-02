@@ -39,3 +39,26 @@ h1::before { content: "💬 "; }
   h1 { font-size: 1.5rem !important; }
   [data-testid="stChatMessage"] { padding: 10px 12px; border-radius: 14px; }
 }
+
+/* 사용자 말풍선은 파란 기운으로 구분해 대화 흐름(질문 ↔ 답변)이 한눈에 보이게 한다 */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+  background: rgba(47, 95, 227, 0.08); border-color: rgba(47, 95, 227, 0.25);
+}
+
+/* 출처 링크: 회색 캡션 안에서도 링크임을 알 수 있게 밑줄·굵게 */
+[data-testid="stChatMessage"] [data-testid="stCaptionContainer"] a {
+  font-weight: 600; text-decoration: underline; text-underline-offset: 2px; word-break: break-all;
+}
+
+/* 키보드 사용자용 초점 표시(접근성) */
+.stButton > button:focus-visible, [data-testid="stChatInput"] textarea:focus-visible, a:focus-visible {
+  outline: 2px solid #2f5fe3; outline-offset: 2px;
+}
+
+/* 예시·후보 질문 버튼: 줄바꿈 허용, 터치 영역 확보(최소 44px) */
+.stButton > button { min-height: 44px; white-space: normal; text-align: left; line-height: 1.4; }
+
+/* 움직임 줄이기 설정을 존중한다 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

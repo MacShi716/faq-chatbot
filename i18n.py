@@ -53,6 +53,8 @@ STRINGS = {
         "lead_found": "관련 안내를 찾았어요.",
         "followup_note": "방금 안내한 내용을 다시 보여드려요. 세부 내용은 학과 사무실에서 한 번 더 확인해 주세요.",
         "related_label": "이런 질문도 많이 해요",
+        "verified": "✅ 확인된 FAQ 답변 · 확인일 {checked}",
+        "thinking": "FAQ에서 답변을 찾는 중…",
         "footer": "데이터 담당: FAQ 의 answer/source/checked_at 를 실제 확인 내용으로 채운 뒤 사용하세요.",
     },
     "zh": {
@@ -102,6 +104,10 @@ STRINGS = {
         "lead_found": "找到了相关的回答。",
         "followup_note": "这是刚才那条回答的再次展示，细节请再向系办公室确认。",
         "related_label": "你可能还想问：",
+        "verified": "✅ 已核实的FAQ回答 · 确认日 {checked}",
+        "thinking": "正在从FAQ中查找回答…",
+        "verified": "✅ 已核实的FAQ回答 · 确认日 {checked}",
+        "thinking": "正在从FAQ中查找回答…",
         "footer": "数据负责人：请把 FAQ 的 answer/source/checked_at 换成实际核实的内容后再使用。",
     },
 }

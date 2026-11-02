@@ -154,6 +154,8 @@ def render_match(idx: int, entry: dict, stream: bool) -> None:
         st.markdown(t(entry["lead"]))
     if not is_filled(reply) or not faq.checked_at:
         st.markdown(f":orange-badge[{t('unverified')}]")
+    else:  # 확인된 FAQ 답변: 초록 배지(미확인=주황, AI=보라와 한눈에 구분)
+        st.markdown(f":green-badge[{t('verified', checked=escape_markdown(faq.checked_at))}]")
     say(reply, stream, "data")
     if fell_back:
         st.caption(t("ko_original"))
@@ -185,7 +187,7 @@ def render_none(idx: int, entry: dict, stream: bool) -> None:
 
 def render_ai(idx: int, entry: dict, stream: bool) -> None:
     """Tier B: FAQ 에 없는 질문에 대한 AI 자율 답변. 항상 라벨이 먼저, 출처 줄(render_source)은 절대 없다."""
-    st.markdown(f":orange-badge[{t('ai_label')}]")
+    st.markdown(f":violet-badge[{t('ai_label')}]")  # 보라: FAQ 확인/미확인 배지와 색으로도 구분
     say(entry["text"], stream, "ai")
     st.caption(safe_links(t("ai_nudge")))
     if entry.get("model"):
@@ -323,9 +325,10 @@ if prompt:
         st.markdown(safe_markdown(prompt))
 
     st.session_state.setdefault("session_id", uuid.uuid4().hex)  # AI 답변 속도 제한 단위
-    entry = build_entry(
-        prompt, st.session_state.history, index, session_key=st.session_state.session_id, ai_enabled=ai_enabled
-    )
+    with st.spinner(t("thinking")):  # 검색·AI 호출 중 로딩 표시
+        entry = build_entry(
+            prompt, st.session_state.history, index, session_key=st.session_state.session_id, ai_enabled=ai_enabled
+        )
     st.session_state.history.append(entry)
     render_entry(len(st.session_state.history) - 1, entry, show_debug, stream=True)
 
