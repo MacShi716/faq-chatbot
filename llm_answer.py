@@ -257,10 +257,6 @@ class ProviderError(Exception):
     def retryable(self) -> bool:  # 같은 제공자에 한 번 더 시도해 볼 만한 오류(429 는 아님)
         return self.kind in ("timeout", "network") or (self.status is not None and self.status >= 500)
 
-    @property
-    def fallback_ok(self) -> bool:  # 다음 제공자로 넘어갈 오류
-        return self.status == 429 or self.retryable or self.kind == "bad_response"
-
 
 def _http_post(url: str, headers: dict, payload: dict, timeout: float) -> dict:
     """JSON POST → 응답 JSON(dict). 실패는 ProviderError. 테스트에서는 이 함수를 바꿔 끼운다."""
