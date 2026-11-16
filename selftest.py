@@ -421,7 +421,7 @@ try:
     h3 = h2[:2] + [{"role": "user", "text": "더 자세히"}]
     check("FAQ 답변 뒤 후속 요청은 예전처럼 동작", build_entry("더 자세히", h3, index)["kind"] == "match")
 
-    # --- 사용자 토글(ai_enabled): 서버가 켜져 있어도 사용자가 안 켜면 예전(FAQ 전용) 동작 그대로
+    # --- 사용자 토글(ai_enabled): 서버가 켜져 있어도 사용자가 안 켜면
     def _boom(*a):
         raise AssertionError("토글이 꺼져 있는데 HTTP 호출됨")
 
