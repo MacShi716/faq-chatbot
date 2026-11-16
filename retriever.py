@@ -253,10 +253,6 @@ class Retriever:
         """질문에 통째로 들어 있는 태그 개수."""
         return sum(1 for tag in (normalize(x) for x in faq.tag_list()) if len(tag) >= 2 and tag in q_norm)
 
-    def _tag_hit(self, faq: Faq, q_norm: str) -> bool:
-        """정규화된 질문 안에 2글자 이상 태그가 통째로 들어 있는지."""
-        return self._tag_hits(faq, q_norm) > 0
-
     def search(self, query: str, lang: str | None = None, top_k: int = 3) -> list[Match]:
         """유사도 순 상위 top_k 개를 돌려준다(임계값 미적용)."""
         query = (query or "").strip()
