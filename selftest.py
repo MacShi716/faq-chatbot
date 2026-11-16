@@ -646,7 +646,10 @@ try:
 
     # ============================================================ [14] QA 인수 테스트 AC-1(2026-10-29) 회귀 점검
     print("[14] QA AC-1: 약한 매칭 가드(AI 꺼짐/켜짐) · 미작성 초안 제외 · 평가 화면 기준 · 타자 효과 링크")
-    check("[준비] 미작성 초안 FAQ 목록에 F21 이 있다", "F21" in drafts, sorted(drafts))
+    # 2026-11-01: FAQ 85행의 답변이 모두 채워져 미작성 초안이 0건이 됐다. 초안 제외 동작은 아래에서
+    # F10 을 일부러 초안으로 되돌린 검색기(draft_index)로 계속 검증한다.
+    check("[준비] drafts 는 '답이 미작성인 FAQ' 집합이다(현재 데이터: " + (", ".join(sorted(drafts)) or "없음") + ")",
+          drafts == {f.id for f in faqs if not is_answerable(f)})
     from chat_logic import content_score, is_confident_match
 
     m_ko = index.search("你会说韩语吗", lang="zh", top_k=1)[0]
@@ -752,8 +755,14 @@ try:
           (byq["Z03"]["app_predicted"], byq["K12"]["app_predicted"], byq["K17"]["app_predicted"]) == ("F02", "F06", ""),
           (byq["Z03"]["app_predicted"], byq["K12"]["app_predicted"], byq["K17"]["app_predicted"]))
     # 숨긴 미작성 초안: '가장 유사한 후보 유사도 1.00' 같은 오해 문구를 만들지 않는다
-    f10q = split_variants(next(f for f in faqs if f.id == "F10").question_ko)[0]
-    e10 = _build_entry(f10q, hist(f10q), index, ai_enabled=False)
+    # (실데이터에 초안이 없으므로 F10 을 초안으로 되돌린 검색기를 따로 만든다)
+    f10 = next(f for f in faqs if f.id == "F10")
+    draft_faq = Faq(f10.id, f10.question_ko, f10.question_zh, "[작성 필요] 확인 중",
+                    f10.source, "", f10.category, "[작성 필요] 确认中", f10.tags)
+    draft_index = Retriever([f for f in faqs if f.id != "F10"] + [draft_faq], threshold=0.4, method="difflib")
+    check("[준비] 초안 검색기: F10 이 미작성 초안으로 들어 있다", not is_answerable(draft_faq))
+    f10q = split_variants(f10.question_ko)[0]
+    e10 = _build_entry(f10q, hist(f10q), draft_index, ai_enabled=False)
     check(f"숨긴 초안(F10 자기 질문 {f10q!r}): 검색 1위는 1.00 이지만 안내에 보일 유사도는 제안한 후보 기준(1.00 아님)",
           e10["kind"] == "none" and e10["best"] == 1.0 and (shown_best(e10) is None or shown_best(e10) < 1.0), (e10.get("kind"), shown_best(e10)))
     check("shown_best: 제안 없으면 None, 있으면 제안한 후보 중 가장 높은 유사도",

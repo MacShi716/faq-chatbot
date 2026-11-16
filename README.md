@@ -1,6 +1,6 @@
 # 학과 교무·생활 Q&A 챗봇
 
-> ※ FAQ 편집 중
+> ※ FAQ 85건 · 답변 미작성 0건 (2026-11-01). `待확인` 41건은 화면에 '미확인 답변' 배지가 붙는다.
 
 > **AI 자율 답변(Tier B, 선택 기능 · 기본은 꺼짐)** — 서버에 설정해 두고 사용자가 앱 채팅 입력창 바로 위(화면 맨 아래에 입력창과 함께 고정)의 **"🤖 AI 대화 켜기"** 토글을 직접 켜면(세션마다 기본 꺼짐) FAQ에 매칭되지 않는 질문에 한해 무료 LLM(Cloudflare Workers AI, 429/5xx/시간 초과 때 Groq 폴백)이 직접 답한다. 이 답변에는 항상 "🤖 AI 자율 답변 · 확인되지 않음" 라벨이 붙고 출처·확인일은 없으며, FAQ 답변(Tier A)과 달리 정확도로 세지 않는다. 학교 고유 정보(전화·비용·일정·장소·운영시간)를 묻는 질문은 LLM을 부르지 않고 "FAQ에 아직 없어요, 공식 페이지나 해당 사무실에 확인해 주세요"만 안내한다. 질문 속 전화번호·이메일·긴 숫자(학번)는 가려서 보내고, 호출 기록은 `logs/tier_b.jsonl`(Git 제외)에 남는다. **키는 코드·`.env.example`·README 에 절대 쓰지 않고** 환경변수 또는 `.streamlit/secrets.toml`(Git 제외)에만 둔다. 켜는 방법은 아래 "AI 자율 답변 켜기" 참고.
 
@@ -39,6 +39,9 @@ streamlit run app.py
 
 화면 오른쪽 위의 `한국어 | 中文` 버튼으로 UI 언어를 바꾼다. 질문 언어는 버튼과 무관하게
 자동으로 판별된다(한국어로 물으면 한국어 FAQ, 中文으로 물으면 中文 FAQ 와 매칭).
+
+> 답변은 한국어(`answer`)·중국어(`answer_zh`) 두 벌이 모두 채워져 있다(85/85). 中文 화면에서는 `answer_zh` 를 쓰고,
+> 그 칸이 비어 있을 때만 한국어 원문을 `（韩语原文）` 표시와 함께 보여준다.
 
 ### AI 자율 답변 켜기 (선택, PowerShell)
 
@@ -119,19 +122,22 @@ faq-chatbot/
 ├─ .gitignore
 ├─ .github/
 │  └─ workflows/
-│     └─ ci.yml           # push·PR 시 selftest·smoke_ui·validate_data·evaluate
+│     └─ ci.yml           # push·PR·매일 04:00 KST·수동 실행 시 selftest·smoke_ui·validate_data·evaluate
 ├─ .streamlit/
 │  └─ config.toml         # 테마, 사용 통계 끄기
 ├─ data/
 │  ├─ faq.csv             # id, question_ko, question_zh, answer, answer_zh, source, checked_at, category, tags
 │  └─ eval.csv            # 평가 문항 50개 (한국어 25 / 중국어 25)
-└─ docs/
-   ├─ 실행계획.md          # 주차별 일정
-   ├─ 데이터수집_가이드.md
-   ├─ 데이터수집_양식.csv
-   ├─ 작업지시서.md
-   ├─ 진행상황.md
-   └─ 회의록.md
+├─ docs/
+│  ├─ 실행계획.md          # 주차별 일정
+│  ├─ 데이터수집_가이드.md
+│  ├─ 데이터수집_양식.csv
+│  ├─ 작업지시서.md
+│  ├─ 진행상황.md
+│  └─ 회의록.md
+└─ qa/
+   ├─ faq.yaml            # 인수 검증 체크리스트
+   └─ run-2026-10-31-acceptance-bf680b4.md  # 로컬 인수 검증 (5/5 PASS)
 ```
 
 ## 3. 데이터 규칙 (가장 중요)
