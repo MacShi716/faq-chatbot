@@ -39,3 +39,35 @@ h1::before { content: "💬 "; }
   h1 { font-size: 1.5rem !important; }
   [data-testid="stChatMessage"] { padding: 10px 12px; border-radius: 14px; }
 }
+
+/* 사용자 말풍선은 파란 기운으로 구분해 대화 흐름(질문 ↔ 답변)이 한눈에 보이게 한다 */
+[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) {
+  background: rgba(47, 95, 227, 0.08); border-color: rgba(47, 95, 227, 0.25);
+}
+
+/* 출처 링크: 회색 캡션 안에서도 링크임을 알 수 있게 밑줄·굵게 */
+[data-testid="stChatMessage"] [data-testid="stCaptionContainer"] a {
+  font-weight: 600; text-decoration: underline; text-underline-offset: 2px; word-break: break-all;
+}
+
+/* 키보드 사용자용 초점 표시(접근성) */
+.stButton > button:focus-visible, [data-testid="stChatInput"] textarea:focus-visible, a:focus-visible {
+  outline: 2px solid #2f5fe3; outline-offset: 2px;
+}
+
+/* 예시·후보 질문 버튼: 줄바꿈 허용, 터치 영역 확보(최소 44px) */
+.stButton > button { min-height: 44px; white-space: normal; text-align: left; line-height: 1.4; }
+
+/* 움직임 줄이기 설정을 존중한다 */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* 휴대폰 화면: 상단 알림(toast)이 첫 AI 답변의 보라색 배지를 가리지 않게 숨긴다.
+   같은 안내 문구는 AI 토글 바로 아래 캡션으로 항상 보인다. */
+/* 휴대폰 화면: 상단 헤더를 앱 배경색으로 채워, 스크롤된 말풍선·아바타가 사이드바 열기 버튼(»)과 겹쳐 보이지 않게 한다. */
+@media (max-width: 640px) {
+  [data-testid="stToastContainer"] { display: none !important; }
+  [data-testid="stAppViewContainer"], [data-testid="stAppViewContainer"] > div, [data-testid="stHeader"] { background-color: inherit; }
+  [data-testid="stHeader"] { z-index: 999990; }
+}
