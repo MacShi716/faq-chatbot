@@ -758,7 +758,7 @@ try:
     # (실데이터에 초안이 없으므로 F10 을 초안으로 되돌린 검색기를 따로 만든다)
     f10 = next(f for f in faqs if f.id == "F10")
     draft_faq = Faq(f10.id, f10.question_ko, f10.question_zh, "[작성 필요] 확인 중",
-                    f10.source, "", f10.category, "[작성 필요] 确认中", f10.tags)
+                    f10.source, "", "[작성 필요] 确认中", f10.tags)
     draft_index = Retriever([f for f in faqs if f.id != "F10"] + [draft_faq], threshold=0.4, method="difflib")
     check("[준비] 초안 검색기: F10 이 미작성 초안으로 들어 있다", not is_answerable(draft_faq))
     f10q = split_variants(f10.question_ko)[0]
