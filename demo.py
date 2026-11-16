@@ -35,7 +35,7 @@ def main() -> None:
 
     for q in SAMPLE:
         lang = detect_lang(q)
-        top = index.search(q, lang=lang, top_k=2)
+        top = index.search(q, lang=lang, top_k=3)
         hit = pick_match(q, top, lang, args.threshold)  # 화면과 같은 판단(약한 매칭 가드·미작성 초안 제외)
         print(f"\n[질문] {q}")
         if hit:

@@ -69,8 +69,7 @@ draft = Faq("T03", "질문", "问题", "한국어 답변", "출처", "2026-10-25
 check("중국어 초안은 미확인이어도 중국어로 표시", draft.answer_for("zh") == ("[待填写] 中文草稿", False), draft.answer_for("zh"))
 
 print("[7] faq.csv 에 answer_zh 컬럼 존재")
-check(f"{len(faqs)}행 모두 answer_zh 로드", all(hasattr(f, "answer_zh") for f in faqs))
-check("현재는 전부 중국어 초안(미확인) 표시", all(f.answer_for("zh")[0] == f.answer_zh.strip() and not f.answer_for("zh")[1] for f in faqs))
+check("전부 answer_zh 가 비어 있지 않고 한국어 폴백이 없다", all(f.answer_for("zh")[0] == f.answer_zh.strip() and not f.answer_for("zh")[1] for f in faqs))
 
 print("[8] 키워드 태그로 중국어 질문 연결")
 check("전 행에 태그 존재", all(f.tag_list() for f in faqs))

@@ -14,7 +14,6 @@ AppTest(smoke_ui.py)는 서버 프로세스 하나를 새로 띄우는 것과 �
   - 하단 고정 영역(st.bottom)의 토글 라벨·도움말(?)·캡션이 i18n 문구와 같다
   - 화면 어디에도 i18n 키 이름(ai_toggle, ai_not_configured …)이 그대로 나오지 않는다
   - (기본) 서버를 켜 둔 채 i18n.py 를 바꿔도 새 문구가 나온다(임시 복사본에서 확인)
-질문은 하지 않으므로 AI/네트워크 호출은 없다. 비밀 값은 쓰지 않는다.
 """
 
 import argparse
@@ -54,7 +53,7 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def project_python(root: Path) -> str:
+def project_python() -> str:
     cand = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     return str(cand) if cand.exists() else sys.executable
 
@@ -69,7 +68,7 @@ class Server:
         self.port = free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         self.proc = subprocess.Popen(
-            [project_python(cwd), "-m", "streamlit", "run", script, "--server.headless", "true",
+            [project_python(), "-m", "streamlit", "run", script, "--server.headless", "true",
              "--server.port", str(self.port), "--browser.gatherUsageStats", "false"],
             cwd=str(cwd), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(90):
@@ -284,11 +283,9 @@ def sanitized_copy() -> Path:
 
 def hotswap(browser, out_dir, prefix):
     """실제 사고 재현: 서버가 옛 i18n.py 로 떠 있는 동안 파일을 새 것으로 바꾼다 → 새 세션에서 키 이름이 아닌 문구가 나와야 한다."""
-    tmp = Path(tempfile.mkdtemp(prefix="faq_hotswap_"))
     srv = None
+    tmp = sanitized_copy()  # secrets.toml 은 복사하지 않는다
     try:
-        shutil.rmtree(tmp, ignore_errors=True)
-        tmp = sanitized_copy()  # secrets.toml 은 복사하지 않는다
         full = (tmp / "i18n.py").read_text(encoding="utf-8")
         old = re.sub(r'^\s+"(ai_toggle|ai_toggle_help|ai_not_configured|ai_on_notice)":.*\n', "", full, flags=re.M)
         check("[준비] 옛 i18n(AI 키 없음)을 만들었다", old != full)
