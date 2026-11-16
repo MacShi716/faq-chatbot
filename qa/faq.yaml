@@ -1,0 +1,45 @@
+name: faq-chatbot-acceptance
+base_url: http://127.0.0.1:8501
+checks:
+  - id: http-health
+    type: http
+    path: /_stcore/health
+    expect_status: 200
+    expect_contains: "ok"
+
+  - id: http-home
+    type: http
+    path: /
+    expect_status: 200
+    expect_contains: "Streamlit"
+
+  - id: console-home
+    type: console
+    path: /
+    viewports: [desktop, mobile]
+
+  - id: flow-suggestion-question
+    type: flow
+    path: /
+    viewport: desktop
+    steps:
+      - action: wait_for
+        selector: 'button:has-text("휴학 신청은 언제 해요?")'
+        value: visible
+      - action: click
+        selector: 'button:has-text("휴학 신청은 언제 해요?")'
+      - action: wait_for
+        selector: 'button:has-text("휴학 신청은 언제 해요?")'
+        value: hidden
+
+  - id: flow-chat-input-visible
+    type: flow
+    path: /
+    viewport: mobile
+    steps:
+      - action: wait_for
+        selector: 'textarea[aria-label]'
+        value: visible
+      - action: expect_text
+        selector: 'h1'
+        value: "Q&A"
